@@ -1,0 +1,8 @@
+{
+  "name": "Rawsight Autonomous Multi-Chain Vault",
+  "description": "Autonomous multi-chain memecoin trading vault across Solana, BNB Chain, and Robinhood Chain featuring algorithmic Rawsight scrutiny, LP rug defense, insider detection, and auto take-profit limits.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Defensively patch global fetch to ensure it is writable and avoid "Cannot set property fetch of #<Window> which has only a getter"
+      (function() {
+        try {
+          const originalFetch = window.fetch ? window.fetch.bind(window) : null;
+          let currentFetch = originalFetch;
+          const protoDesc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(window) || {}, 'fetch') ||
+                            Object.getOwnPropertyDescriptor(window, 'fetch');
+          if (protoDesc && protoDesc.get && !protoDesc.set) {
+            Object.defineProperty(window, 'fetch', {
+              get() {
+                return currentFetch || (originalFetch ? originalFetch : undefined);
+              },
+              set(val) {
+                currentFetch = val;
+              },
+              configurable: true,
+              enumerable: true,
+            });
+          }
+        } catch (e) {
+          // silently handle if window is sealed or sandboxed
+        }
+      })();
+    </script>
+    <title>RAWSIGHT VAULT // Autonomous Multi-Chain Trading</title>
+    <meta name="description" content="Autonomous multi-chain trading vault across Solana, BNB Chain, and Robinhood Chain with Rawsight scrutiny filters, rug protection, and take-profit execution." />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,600;0,700;1,700&family=JetBrains+Mono:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-[#050505] text-[#D9F99D] font-mono antialiased selection:bg-[#D9F99D]/30 selection:text-[#D9F99D]">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
