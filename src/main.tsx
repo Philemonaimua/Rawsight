@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Buffer } from 'buffer';
+import { inject } from '@vercel/analytics';
 import App from './App.tsx';
 import './index.css';
 import { MultiChainWalletProvider } from './components/WalletProviders.tsx';
@@ -28,6 +29,9 @@ if (typeof window !== 'undefined') {
     }
   });
 }
+
+// Initialize Vercel Analytics
+inject();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
