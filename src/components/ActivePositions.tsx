@@ -14,20 +14,17 @@ import {
 } from 'lucide-react';
 import { TradePosition } from '../types';
 import { CHAINS_CONFIG } from '../data/mockTokens';
+import { formatMarketCap, formatLiquidity, formatTokenPrice } from '../lib/formatters';
 
 interface ActivePositionsProps {
   positions: TradePosition[];
   onManualClose: (positionId: string) => void;
-  onSimulateRug: (positionId: string) => void;
-  onSimulatePump: (positionId: string) => void;
   takeProfitTargetPercent: number;
 }
 
 export const ActivePositions: React.FC<ActivePositionsProps> = ({
   positions,
   onManualClose,
-  onSimulateRug,
-  onSimulatePump,
   takeProfitTargetPercent,
 }) => {
   const [copiedCa, setCopiedCa] = useState<string | null>(null);
@@ -148,8 +145,8 @@ export const ActivePositions: React.FC<ActivePositionsProps> = ({
                             {chainConfig.name}
                           </span>
                         </div>
-                        <p className="text-xs text-zinc-400 truncate max-w-[220px]">
-                          {pos.token.name}
+                        <p className="text-xs text-zinc-400 truncate max-w-[260px]">
+                          {pos.token.name} • <span className="text-zinc-300 font-semibold">MC: {formatMarketCap(pos.token.mcap)}</span>
                         </p>
                       </div>
                     </div>
@@ -173,10 +170,10 @@ export const ActivePositions: React.FC<ActivePositionsProps> = ({
                         ENTRY / CURRENT
                       </span>
                       <div className="text-xs text-zinc-400 mt-0.5">
-                        ${pos.entryPrice < 0.01 ? pos.entryPrice.toFixed(6) : pos.entryPrice.toFixed(4)}
+                        {formatTokenPrice(pos.entryPrice)}
                       </div>
                       <div className="text-sm font-bold text-white">
-                        ${pos.currentPrice < 0.01 ? pos.currentPrice.toFixed(6) : pos.currentPrice.toFixed(4)}
+                        {formatTokenPrice(pos.currentPrice)}
                       </div>
                     </div>
 
@@ -230,31 +227,14 @@ export const ActivePositions: React.FC<ActivePositionsProps> = ({
                   </div>
                 </div>
 
-                {/* Interactive Test Triggers (Simulate Rug Defense / Take Profit Moon) */}
-                <div className="pt-3 border-t border-white/5 flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[9px] uppercase tracking-wider opacity-40">
-                    Algorithmic Test:
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      id={`btn-pump-${pos.id}`}
-                      onClick={() => onSimulatePump(pos.id)}
-                      className="px-3 py-1.5 min-h-[36px] rounded-md text-[10px] font-bold uppercase tracking-wider bg-[#D9F99D] text-black hover:bg-[#bef264] transition-all flex items-center gap-1 cursor-pointer"
-                      title="Simulate rapid pump to trigger Take-Profit auto-exit"
-                    >
-                      <TrendingUp className="w-3 h-3 text-black" />
-                      <span>Moon +85%</span>
-                    </button>
-
-                    <button
-                      id={`btn-rug-${pos.id}`}
-                      onClick={() => onSimulateRug(pos.id)}
-                      className="px-3 py-1.5 min-h-[36px] rounded-md text-[10px] font-bold uppercase tracking-wider border border-amber-500/40 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 transition-all flex items-center gap-1 cursor-pointer"
-                      title="Simulate Dev Liquidity Pull to trigger Instant Rug Defense Shield"
-                    >
-                      <AlertOctagon className="w-3 h-3 text-amber-400" />
-                      <span>Test Rug Attack</span>
-                    </button>
+                {/* Live Position Status & Execution Details */}
+                <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2 text-[10px] text-zinc-400">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#D9F99D] animate-pulse" />
+                    <span>Monitoring Order Execution</span>
+                  </div>
+                  <div className="font-mono text-zinc-500 text-[9px]">
+                    Position ID: #{pos.id.slice(-6)}
                   </div>
                 </div>
               </div>

@@ -2,9 +2,13 @@ import React, { useMemo } from 'react';
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
+import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { clusterApiUrl } from '@solana/web3.js';
 import { wagmiConfig } from '../lib/wagmiConfig';
 import { MAINNET_RPCS } from '../lib/web3Service';
+
+// Include wallet adapter default UI styles
+import '@solana/wallet-adapter-react-ui/styles.css';
 
 const queryClient = new QueryClient();
 
@@ -22,18 +26,21 @@ export const MultiChainWalletProvider: React.FC<WalletProvidersProps> = ({
     return solanaRpcUrl || MAINNET_RPCS.solana || clusterApiUrl('mainnet-beta');
   }, [solanaRpcUrl]);
 
-  // Standard wallet adapters are auto-discovered via Wallet Standard in @solana/wallet-adapter-react
+  // Standard Wallet auto-detection (empty wallets array allows @solana/wallet-adapter-react to detect standard wallet extensions)
   const wallets = useMemo(() => [], []);
 
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <ConnectionProvider endpoint={endpoint}>
-          <WalletProvider wallets={wallets} autoConnect={false}>
-            {children}
+          <WalletProvider wallets={wallets} autoConnect={true}>
+            <WalletModalProvider>
+              {children}
+            </WalletModalProvider>
           </WalletProvider>
         </ConnectionProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );
 };
+

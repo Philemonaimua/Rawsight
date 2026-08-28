@@ -294,8 +294,14 @@ export const VaultOverview: React.FC<VaultOverviewProps> = ({
               <span>Sizing Strategy:</span>
               <strong className="text-white">
                 {vaultConfig.sizingMode === 'FIXED_USD' && `$${vaultConfig.allocationPerTradeUsd}/coin`}
-                {vaultConfig.sizingMode === 'PERCENT_NAV' && `${vaultConfig.allocationPercentNav}% NAV ($${Math.round((vaultState.totalNavUsd * vaultConfig.allocationPercentNav) / 100)})`}
+                {vaultConfig.sizingMode === 'PERCENT_NAV' && `${vaultConfig.allocationPercentNav}% NAV ($${Math.max(1, Math.round((vaultState.totalNavUsd * vaultConfig.allocationPercentNav) / 100))})`}
                 {vaultConfig.sizingMode === 'SCRUTINY_WEIGHTED' && `Alpha-Weighted ($${vaultConfig.allocationPerTradeUsd} base)`}
+              </strong>
+            </div>
+            <div className="flex justify-between items-center text-zinc-300">
+              <span>Min Execution Floor:</span>
+              <strong className="text-[#D9F99D]">
+                ${Math.max(1, vaultConfig.minTradeSizeUsd || 1).toFixed(2)} USD Min
               </strong>
             </div>
             <div className="flex justify-between items-center text-zinc-300">

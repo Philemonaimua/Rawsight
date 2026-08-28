@@ -21,6 +21,7 @@ interface VaultStrategyModalProps {
   config: VaultConfig;
   onSaveConfig: (newConfig: VaultConfig) => void;
   totalNavUsd?: number;
+  initialTab?: 'sizing' | 'execution' | 'scrutiny';
 }
 
 export const VaultStrategyModal: React.FC<VaultStrategyModalProps> = ({
@@ -29,9 +30,17 @@ export const VaultStrategyModal: React.FC<VaultStrategyModalProps> = ({
   config,
   onSaveConfig,
   totalNavUsd = 10000,
+  initialTab = 'sizing',
 }) => {
   const [formData, setFormData] = useState<VaultConfig>({ ...config });
-  const [activeTab, setActiveTab] = useState<'sizing' | 'execution' | 'scrutiny'>('sizing');
+  const [activeTab, setActiveTab] = useState<'sizing' | 'execution' | 'scrutiny'>(initialTab);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setFormData({ ...config });
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, config, initialTab]);
 
   if (!isOpen) return null;
 
@@ -127,12 +136,17 @@ export const VaultStrategyModal: React.FC<VaultStrategyModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSaveConfig(formData);
+    onSaveConfig({
+      ...formData,
+      minTradeSizeUsd: Math.max(1, Number(formData.minTradeSizeUsd) || 1),
+      allocationPerTradeUsd: Math.max(1, Number(formData.allocationPerTradeUsd) || 1),
+    });
     onClose();
   };
 
-  // Preview calculated sizing for percent NAV mode
-  const currentNavSizingDollars = Math.round((totalNavUsd * formData.allocationPercentNav) / 100);
+  // Preview calculated sizing for percent NAV mode ($1.00 floor applied)
+  const rawNavSizingDollars = (totalNavUsd * formData.allocationPercentNav) / 100;
+  const currentNavSizingDollars = Math.max(1, Math.round(rawNavSizingDollars));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in font-mono">
@@ -336,11 +350,11 @@ export const VaultStrategyModal: React.FC<VaultStrategyModalProps> = ({
                 {formData.sizingMode === 'FIXED_USD' && (
                   <div className="pt-2 border-t border-white/5 space-y-2">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-400 text-[10px] uppercase">Fixed USD Amount Per Coin:</span>
+                      <span className="text-zinc-400 text-[10px] uppercase">Fixed USD Amount Per Coin ($1.00 Min):</span>
                       <strong className="text-[#D9F99D]">${formData.allocationPerTradeUsd} USD</strong>
                     </div>
                     <div className="grid grid-cols-4 gap-2">
-                      {[50, 100, 250, 500].map((amt) => (
+                      {[10, 50, 100, 250].map((amt) => (
                         <button
                           key={amt}
                           type="button"
@@ -359,11 +373,11 @@ export const VaultStrategyModal: React.FC<VaultStrategyModalProps> = ({
                       <span className="text-xs text-zinc-500">Custom $:</span>
                       <input
                         type="number"
-                        min="10"
+                        min="1"
                         max="5000"
-                        step="10"
+                        step="1"
                         value={formData.allocationPerTradeUsd}
-                        onChange={(e) => setFormData({ ...formData, allocationPerTradeUsd: Number(e.target.value) })}
+                        onChange={(e) => setFormData({ ...formData, allocationPerTradeUsd: Math.max(1, Number(e.target.value)) })}
                         className="bg-[#0A0A0A] border border-white/10 rounded-sm px-2.5 py-1 text-xs text-white flex-1 focus:outline-none focus:border-[#D9F99D]/50"
                       />
                     </div>
@@ -375,11 +389,11 @@ export const VaultStrategyModal: React.FC<VaultStrategyModalProps> = ({
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-zinc-400 text-[10px] uppercase">Portfolio Allocation %:</span>
                       <strong className="text-[#D9F99D]">
-                        {formData.allocationPercentNav}% (≈ ${currentNavSizingDollars} USD)
+                        {formData.allocationPercentNav}% (≈ ${currentNavSizingDollars} USD • $1.00 Min Floor)
                       </strong>
                     </div>
                     <div className="grid grid-cols-5 gap-1.5">
-                      {[2, 3.5, 5, 7.5, 10].map((pct) => (
+                      {[1, 2, 3.5, 5, 10].map((pct) => (
                         <button
                           key={pct}
                           type="button"
@@ -396,34 +410,37 @@ export const VaultStrategyModal: React.FC<VaultStrategyModalProps> = ({
                     </div>
                     <input
                       type="range"
-                      min="1"
+                      min="0.1"
                       max="20"
-                      step="0.5"
+                      step="0.1"
                       value={formData.allocationPercentNav}
                       onChange={(e) => setFormData({ ...formData, allocationPercentNav: Number(e.target.value) })}
                       className="w-full accent-[#D9F99D] cursor-pointer mt-1"
                     />
+                    <div className="text-[10px] text-zinc-500">
+                      Calculated allocations below $1.00 automatically floor to $1.00 minimum if funds allow.
+                    </div>
                   </div>
                 )}
 
                 {formData.sizingMode === 'SCRUTINY_WEIGHTED' && (
                   <div className="pt-2 border-t border-white/5 space-y-2 text-xs">
                     <div className="flex items-center justify-between">
-                      <span className="text-zinc-400 text-[10px] uppercase">Base Allocation:</span>
+                      <span className="text-zinc-400 text-[10px] uppercase">Base Allocation ($1.00 Min):</span>
                       <strong className="text-[#D9F99D]">${formData.allocationPerTradeUsd} USD</strong>
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-[10px] p-2 rounded bg-[#0A0A0A] border border-white/5">
                       <div>
                         <span className="text-[#D9F99D] block font-bold">Alpha 95-100</span>
-                        <span className="text-zinc-400">120% (${Math.round(formData.allocationPerTradeUsd * 1.2)})</span>
+                        <span className="text-zinc-400">120% (${Math.max(1, Math.round(formData.allocationPerTradeUsd * 1.2))})</span>
                       </div>
                       <div>
                         <span className="text-white block font-bold">Alpha 85-94</span>
-                        <span className="text-zinc-400">100% (${formData.allocationPerTradeUsd})</span>
+                        <span className="text-zinc-400">100% (${Math.max(1, formData.allocationPerTradeUsd)})</span>
                       </div>
                       <div>
                         <span className="text-amber-400 block font-bold">Alpha 75-84</span>
-                        <span className="text-zinc-400">60% (${Math.round(formData.allocationPerTradeUsd * 0.6)})</span>
+                        <span className="text-zinc-400">60% (${Math.max(1, Math.round(formData.allocationPerTradeUsd * 0.6))})</span>
                       </div>
                     </div>
                   </div>
@@ -432,31 +449,40 @@ export const VaultStrategyModal: React.FC<VaultStrategyModalProps> = ({
 
               {/* Safeguard Caps */}
               <div className="p-3.5 rounded-lg bg-[#050505] border border-white/10 space-y-2">
-                <span className="block text-[10px] uppercase tracking-widest text-zinc-400">
-                  POSITION SIZE SAFEGUARD CAPS (USD)
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="block text-[10px] uppercase tracking-widest text-zinc-400">
+                    POSITION SIZE SAFEGUARD CAPS (USD)
+                  </span>
+                  <span className="text-[10px] text-[#D9F99D] font-bold">
+                    $1.00 Min Floor Guard
+                  </span>
+                </div>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <span className="text-zinc-500 block text-[10px] uppercase">Min Size Floor</span>
+                    <span className="text-zinc-500 block text-[10px] uppercase">Min Size Floor ($1.00 Min)</span>
                     <input
                       type="number"
-                      min="10"
+                      min="1"
                       max="500"
+                      step="1"
                       value={formData.minTradeSizeUsd}
-                      onChange={(e) => setFormData({ ...formData, minTradeSizeUsd: Number(e.target.value) })}
+                      onChange={(e) => setFormData({ ...formData, minTradeSizeUsd: Math.max(1, Number(e.target.value)) })}
                       className="w-full bg-[#0A0A0A] border border-white/10 rounded-sm px-2 py-1 text-white mt-1 text-xs focus:outline-none"
                     />
+                    <span className="text-[9px] text-zinc-500 block mt-0.5">Strict $1.00 minimum execution limit</span>
                   </div>
                   <div>
                     <span className="text-zinc-500 block text-[10px] uppercase">Max Exposure Ceiling</span>
                     <input
                       type="number"
-                      min="100"
+                      min="1"
                       max="10000"
+                      step="10"
                       value={formData.maxTradeSizeUsd}
-                      onChange={(e) => setFormData({ ...formData, maxTradeSizeUsd: Number(e.target.value) })}
+                      onChange={(e) => setFormData({ ...formData, maxTradeSizeUsd: Math.max(1, Number(e.target.value)) })}
                       className="w-full bg-[#0A0A0A] border border-white/10 rounded-sm px-2 py-1 text-white mt-1 text-xs focus:outline-none"
                     />
+                    <span className="text-[9px] text-zinc-500 block mt-0.5">Cap per individual position</span>
                   </div>
                 </div>
               </div>

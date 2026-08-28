@@ -12,7 +12,7 @@ import {
   Zap,
   ShieldCheck
 } from 'lucide-react';
-import { Chain, LiveWalletState } from '../types';
+import { Chain, LiveWalletState, TradingMode } from '../types';
 import { CHAINS_CONFIG } from '../data/mockTokens';
 import { 
   executeOnChainSolanaWithdrawal, 
@@ -25,6 +25,7 @@ interface WithdrawModalProps {
   onClose: () => void;
   availableBalance: number;
   walletState: LiveWalletState;
+  tradingMode?: TradingMode;
   onConfirmWithdraw: (amountUsd: number, chain: Chain, txHash?: string) => void;
   customRpcUrl?: string;
 }
@@ -34,6 +35,7 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
   onClose,
   availableBalance,
   walletState,
+  tradingMode = 'SIMULATION_SANDBOX',
   onConfirmWithdraw,
   customRpcUrl,
 }) => {
@@ -102,8 +104,8 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
 
   const handleExecuteWithdrawal = async () => {
     setError(null);
-    if (parsedAmount <= 0) {
-      setError('Please enter a valid withdrawal amount.');
+    if (parsedAmount < 1.0) {
+      setError('Minimum withdrawal execution is $1.00 USD (or equivalent native token value).');
       return;
     }
     if (parsedAmount > availableBalance && availableBalance > 0) {
@@ -116,28 +118,40 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
     }
 
     setIsProcessing(true);
-    setStatusMessage('Initiating on-chain withdrawal...');
+    setStatusMessage(tradingMode === 'LIVE_MAINNET' ? 'Initiating on-chain withdrawal...' : 'Processing sandbox withdrawal...');
 
     try {
       let result: { txHash: string; explorerUrl: string };
 
-      if (selectedChain === 'solana') {
-        setStatusMessage('Connecting to Solana Mainnet RPC & requesting signature...');
-        result = await executeOnChainSolanaWithdrawal({
-          recipientAddress: recipientAddress.trim(),
-          amountSol: nativeAmount,
-          customRpcUrl,
-        });
+      if (tradingMode === 'LIVE_MAINNET') {
+        if (selectedChain === 'solana') {
+          setStatusMessage('Connecting to Solana Mainnet RPC & requesting signature...');
+          result = await executeOnChainSolanaWithdrawal({
+            recipientAddress: recipientAddress.trim(),
+            amountSol: nativeAmount,
+            customRpcUrl,
+          });
+        } else {
+          setStatusMessage(`Switching to ${currentChainConfig.name} & prompting transaction signature...`);
+          result = await executeOnChainEvmWithdrawal({
+            chain: selectedChain,
+            recipientAddress: recipientAddress.trim(),
+            amount: nativeAmount,
+          });
+        }
       } else {
-        setStatusMessage(`Switching to ${currentChainConfig.name} & prompting transaction signature...`);
-        result = await executeOnChainEvmWithdrawal({
-          chain: selectedChain,
-          recipientAddress: recipientAddress.trim(),
-          amount: nativeAmount,
-        });
+        // Sandbox bypass: simulate instantaneous local confirmation without throwing RPC gas errors
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        const simHash = selectedChain === 'solana'
+          ? `sim_sol_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+          : `0xsim_${Date.now().toString(16)}${Math.random().toString(16).slice(2, 24)}`;
+        result = {
+          txHash: simHash,
+          explorerUrl: getBlockExplorerTxUrl(selectedChain, simHash),
+        };
       }
 
-      setStatusMessage('Transaction successfully confirmed on-chain!');
+      setStatusMessage(tradingMode === 'LIVE_MAINNET' ? 'Transaction successfully confirmed on-chain!' : 'Sandbox withdrawal completed successfully!');
       setTxSuccess({
         txHash: result.txHash,
         explorerUrl: result.explorerUrl,
@@ -149,7 +163,7 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
       onConfirmWithdraw(parsedAmount, selectedChain, result.txHash);
     } catch (err: any) {
       console.error('Withdrawal error:', err);
-      setError(err?.message || 'On-chain withdrawal failed. Check wallet connection or balance.');
+      setError(err?.message || 'Withdrawal failed. Check wallet connection or balance.');
     } finally {
       setIsProcessing(false);
     }
@@ -265,8 +279,11 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
             {/* Amount Selection */}
             <div>
               <div className="flex items-center justify-between text-xs mb-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">
-                  3. WITHDRAWAL AMOUNT (USD)
+                <label className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold flex items-center gap-1.5">
+                  <span>3. WITHDRAWAL AMOUNT (USD)</span>
+                  <span className="text-amber-400 font-mono text-[9px] px-1 py-0.2 rounded bg-amber-500/15">
+                    $1.00 MIN
+                  </span>
                 </label>
                 <div className="text-[10px] text-zinc-400">
                   Available Reserve: <span className="text-[#D9F99D] font-bold">${availableBalance.toFixed(2)} USD</span>
@@ -279,8 +296,9 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
                 </span>
                 <input
                   type="number"
-                  min="0"
+                  min="1"
                   step="any"
+                  placeholder="1.00"
                   value={amountStr}
                   onChange={(e) => {
                     setAmountStr(e.target.value);
@@ -291,6 +309,11 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-amber-400 font-semibold">
                   ≈ {nativeAmount.toFixed(4)} {currentChainConfig.nativeCoin}
                 </div>
+              </div>
+
+              <div className="flex justify-between items-center text-[10px] text-zinc-500 mb-2">
+                <span>Minimum withdrawal is $1.00 USD</span>
+                <span>Native rate: ~${nativeRate} USD/{currentChainConfig.nativeCoin}</span>
               </div>
 
               {/* Quick percentage buttons */}

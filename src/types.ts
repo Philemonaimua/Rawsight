@@ -1,5 +1,92 @@
 export type Chain = 'solana' | 'bnb' | 'robinhood';
 
+export type TokenStage = 'pre-graduation' | 'graduated';
+
+// Standardized Unified Normalized Token Model across Solana, BNB Chain, and Robinhood Chain
+export interface NormalizedDiscoveryToken {
+  id: string;
+  symbol: string;
+  name: string;
+  address: string;
+  chain: 'solana' | 'bnb' | 'robinhood';
+  stage: TokenStage;
+  bondingProgress?: number; // Present if pre-graduation (20% - 85%)
+  marketCap: number;
+  liquidity: number;
+  volume5m: number;
+  riskScore: number; // Auto-calculated anti-rug score (0-100, lower is safer)
+}
+
+export interface PreGraduationSettings {
+  minBondingProgress: number; // default 20%
+  maxBondingProgress: number; // default 85%
+  minMcapUsd: number;         // default 5000 ($5k)
+  maxMcapUsd: number;         // default 65000 ($65k)
+  minVelocityBuys: number;    // default 10 buys
+  allowedLaunchpads: LaunchSource[];
+  autoRefreshIntervalSec: number;
+}
+
+export type SolanaLaunchpad = 'Pump.fun' | 'Moonshot' | 'Best Wallet';
+export type SolanaDex = 'Raydium' | 'Jupiter' | 'Meteora';
+
+export type BnbLaunchpad = 'Four.meme' | 'PinkSale' | 'Kommunitas';
+export type BnbDex = 'PancakeSwap' | 'Biswap' | 'THENA';
+
+export type RobinhoodLaunchpad = 'Hood.fun' | 'Flap' | 'Pons';
+export type RobinhoodDex = 'Uniswap V3' | 'Ramses / Camelot' | 'Robinhood Swap';
+
+export type LaunchSource = 
+  | SolanaLaunchpad 
+  | SolanaDex 
+  | BnbLaunchpad 
+  | BnbDex 
+  | RobinhoodLaunchpad 
+  | RobinhoodDex;
+
+export interface LaunchpadConfig {
+  name: string;
+  chain: Chain;
+  type: 'BONDING_CURVE' | 'DEX_PAIR' | 'PRESALE_FAIRLAUNCH' | 'DIRECT_DEPLOY';
+  contractOrProgramId: string;
+  routerAddress?: string;
+  description: string;
+  isBondingCurve: boolean;
+  listenerTopicOrFilter: string;
+}
+
+export interface EarlyLaunchToken extends MemeToken {
+  stage?: TokenStage;
+  bondingProgress?: number; // Standardized alias for bondingCurveProgress
+  volume5m?: number;
+  launchSource: LaunchSource;
+  sourceType: 'BONDING_CURVE' | 'DEX_PAIR' | 'PRESALE_FAIRLAUNCH' | 'FAIR_LAUNCH' | 'DIRECT_DEPLOY';
+  bondingCurveProgress?: number; // 0-100%
+  pairAddress?: string;
+  routerAddress?: string;
+  liquidityLockStatus: '100% Burned' | 'PinkLock 365d' | 'Locked Team' | 'Unlocked (High Risk)';
+  taxBuySell: string; // e.g. "0% / 0%" or "5% / 5% (Warning)"
+  isHoneypotSafe: boolean;
+  ownershipRenounced: boolean;
+  targetDexRouter: string;
+  detectionLatencyMs: number;
+  initialLpNative: number;
+  secondsSinceLaunch: number;
+  hasAutoSniped?: boolean;
+  txns5m?: { buys: number; sells: number };
+}
+
+export interface WebSocketListenerStatus {
+  chain: Chain;
+  name: string;
+  targetProgramOrContract: string;
+  eventSignature: string;
+  status: 'LISTENING' | 'CONNECTING' | 'RECONNECTING' | 'ERROR';
+  eventsProcessed: number;
+  lastEventTime: number | null;
+  avgLatencyMs: number;
+}
+
 export interface ChainConfig {
   id: Chain;
   name: string;
@@ -126,11 +213,11 @@ export interface VaultConfig {
   autoTradeEnabled: boolean;
   riskProfile: 'conservative' | 'balanced' | 'degen';
   
-  // Custom Position Sizing Parameters
+  // Custom Position Sizing Parameters ($1.00 USD strict execution minimum floor)
   sizingMode: SizingMode;
-  allocationPerTradeUsd: number; // For FIXED_USD mode
+  allocationPerTradeUsd: number; // For FIXED_USD mode (min $1.00)
   allocationPercentNav: number;  // For PERCENT_NAV mode (e.g. 5%)
-  minTradeSizeUsd: number;       // Safeguard floor
+  minTradeSizeUsd: number;       // Safeguard floor (min $1.00 USD)
   maxTradeSizeUsd: number;       // Safeguard ceiling
   maxActivePositions: number;
   
@@ -171,7 +258,7 @@ export interface VaultConfig {
 
 export interface LiveWalletState {
   isConnected: boolean;
-  walletProvider: 'Autonomous Vault Key' | 'Phantom' | 'Solflare' | 'MetaMask' | 'Rabby' | 'Robinhood Gateway' | null;
+  walletProvider: 'Autonomous Vault Key' | 'Phantom' | 'Solflare' | 'Backpack' | 'MetaMask' | 'Rabby' | 'Coinbase' | 'Robinhood Gateway' | 'Solana Wallet' | null;
   address: string;
   chain: Chain;
   vaultAddresses: {

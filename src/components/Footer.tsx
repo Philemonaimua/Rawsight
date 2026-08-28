@@ -89,10 +89,15 @@ export const Footer: React.FC<FooterProps> = ({ onOpenWallet, onOpenStrategy }) 
           </div>
         </div>
 
-        {/* Bottom copyright */}
+        {/* Bottom copyright and ACE Creator Credit */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 text-[10px] text-zinc-400">
-          <div>
-            © {new Date().getFullYear()} Rawsight Multi-Chain Vault System. All cryptographic operations signed on-chain.
+          <div className="flex items-center gap-2 flex-wrap">
+            <span>© {new Date().getFullYear()} Rawsight Multi-Chain Vault System. All cryptographic operations signed on-chain.</span>
+            <span className="text-zinc-600 hidden sm:inline">•</span>
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#D9F99D]/10 border border-[#D9F99D]/30 text-[#D9F99D] font-bold tracking-wider shadow-[0_0_10px_rgba(217,249,157,0.15)]">
+              <span className="w-1 h-1 rounded-full bg-[#D9F99D] animate-ping" />
+              Created by ACE
+            </span>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-zinc-400">Mainnet Beta</span>

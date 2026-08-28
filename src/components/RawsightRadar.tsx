@@ -12,11 +12,14 @@ import {
   Search,
   Check,
   Loader2,
-  Copy
+  Copy,
+  BarChart2
 } from 'lucide-react';
 import { MemeToken, Chain } from '../types';
 import { CHAINS_CONFIG } from '../data/mockTokens';
 import { inspectLiveContractAddress } from '../lib/dexScreener';
+import { formatAddressDisplay, getDexScreenerUrl, getExplorerTokenUrl } from '../lib/caParser';
+import { formatMarketCap, formatLiquidity, formatTokenPrice } from '../lib/formatters';
 
 interface RawsightRadarProps {
   tokens: MemeToken[];
@@ -67,7 +70,7 @@ export const RawsightRadar: React.FC<RawsightRadarProps> = ({
       } else {
         setInspectError('No active liquidity pair found on DexScreener/Raydium for this contract address.');
       }
-    } catch (err: any) {
+    } catch {
       setInspectError('Failed to inspect contract address.');
     } finally {
       setIsInspecting(false);
@@ -103,7 +106,7 @@ export const RawsightRadar: React.FC<RawsightRadarProps> = ({
           <div className="flex items-center bg-[#050505] p-1 rounded-md border border-white/10 text-xs overflow-x-auto max-w-full">
             <button
               onClick={() => setSelectedChainFilter('all')}
-              className={`px-3 py-1.5 min-h-[36px] rounded-sm uppercase tracking-wider text-[11px] font-bold transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 min-h-[44px] rounded-sm uppercase tracking-wider text-[11px] font-bold transition-colors cursor-pointer ${
                 selectedChainFilter === 'all' 
                   ? 'bg-[#D9F99D] text-black shadow-sm' 
                   : 'text-zinc-400 hover:text-white'
@@ -113,7 +116,7 @@ export const RawsightRadar: React.FC<RawsightRadarProps> = ({
             </button>
             <button
               onClick={() => setSelectedChainFilter('solana')}
-              className={`px-3 py-1.5 min-h-[36px] rounded-sm uppercase tracking-wider text-[11px] font-bold transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 min-h-[44px] rounded-sm uppercase tracking-wider text-[11px] font-bold transition-colors cursor-pointer ${
                 selectedChainFilter === 'solana' 
                   ? 'bg-[#D9F99D] text-black' 
                   : 'text-zinc-400 hover:text-[#D9F99D]'
@@ -123,7 +126,7 @@ export const RawsightRadar: React.FC<RawsightRadarProps> = ({
             </button>
             <button
               onClick={() => setSelectedChainFilter('bnb')}
-              className={`px-3 py-1.5 min-h-[36px] rounded-sm uppercase tracking-wider text-[11px] font-bold transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 min-h-[44px] rounded-sm uppercase tracking-wider text-[11px] font-bold transition-colors cursor-pointer ${
                 selectedChainFilter === 'bnb' 
                   ? 'bg-amber-400 text-black' 
                   : 'text-zinc-400 hover:text-amber-300'
@@ -133,7 +136,7 @@ export const RawsightRadar: React.FC<RawsightRadarProps> = ({
             </button>
             <button
               onClick={() => setSelectedChainFilter('robinhood')}
-              className={`px-3 py-1.5 min-h-[36px] rounded-sm uppercase tracking-wider text-[11px] font-bold transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 min-h-[44px] rounded-sm uppercase tracking-wider text-[11px] font-bold transition-colors cursor-pointer ${
                 selectedChainFilter === 'robinhood' 
                   ? 'bg-[#D9F99D] text-black' 
                   : 'text-zinc-400 hover:text-[#D9F99D]'
@@ -218,6 +221,8 @@ export const RawsightRadar: React.FC<RawsightRadarProps> = ({
         {filteredTokens.map((token) => {
           const chainConfig = CHAINS_CONFIG[token.chain];
           const isPassed = token.scrutinyStatus === 'PASSED_RAWSIGHT';
+          const dexScreenerUrl = getDexScreenerUrl(token.chain, token.contractAddress);
+          const explorerUrl = getExplorerTokenUrl(token.chain, token.contractAddress);
 
           return (
             <div
@@ -230,7 +235,7 @@ export const RawsightRadar: React.FC<RawsightRadarProps> = ({
             >
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                 {/* Left: Token info & Chain */}
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <div className={`w-9 h-9 rounded-md flex items-center justify-center font-bold text-xs shrink-0 ${
                     isPassed 
                       ? 'bg-[#D9F99D]/10 text-[#D9F99D] border border-[#D9F99D]/30' 
@@ -238,23 +243,23 @@ export const RawsightRadar: React.FC<RawsightRadarProps> = ({
                   }`}>
                     {token.symbol.replace('$', '').slice(0, 3)}
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-bold text-white text-sm">
                         {token.symbol}
                       </span>
 
                       {/* Explicit Contract Address beside token */}
-                      <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-[#0A0A0A] border border-white/10 hover:border-[#D9F99D]/40 transition-colors">
+                      <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#0A0A0A] border border-white/10 hover:border-[#D9F99D]/40 transition-colors">
                         <span className="text-[9px] uppercase tracking-wider text-zinc-500 font-semibold">CA:</span>
-                        <span className="text-[10px] text-zinc-300 font-mono">
-                          {token.contractAddress.slice(0, 4)}...{token.contractAddress.slice(-4)}
+                        <span className="text-[10px] text-zinc-300 font-mono" title={token.contractAddress}>
+                          {formatAddressDisplay(token.contractAddress, 6, 4)}
                         </span>
                         <button
                           type="button"
                           onClick={(e) => handleCopyCa(token.contractAddress, e)}
                           className="text-zinc-400 hover:text-[#D9F99D] p-1 transition-colors cursor-pointer"
-                          title="Copy Contract Address"
+                          title="Copy Full Contract Address"
                         >
                           {copiedCa === token.contractAddress ? (
                             <Check className="w-3 h-3 text-[#D9F99D]" />
@@ -262,28 +267,37 @@ export const RawsightRadar: React.FC<RawsightRadarProps> = ({
                             <Copy className="w-3 h-3" />
                           )}
                         </button>
-                        {chainConfig && (
-                          <a
-                            href={`${chainConfig.explorerUrl}/token/${token.contractAddress}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-zinc-500 hover:text-[#D9F99D] p-1 transition-colors"
-                            title={`View on ${chainConfig.name} Explorer`}
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        )}
+                        
+                        <a
+                          href={dexScreenerUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-zinc-500 hover:text-[#D9F99D] p-1 transition-colors"
+                          title="Open on DexScreener"
+                        >
+                          <BarChart2 className="w-3 h-3" />
+                        </a>
+
+                        <a
+                          href={explorerUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-zinc-500 hover:text-[#D9F99D] p-1 transition-colors"
+                          title={`View on ${chainConfig?.name || 'Block'} Explorer`}
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
                       </div>
 
                       <span className="px-1.5 py-0.5 rounded-sm text-[9px] uppercase tracking-wider border border-[#D9F99D]/30 bg-[#D9F99D]/10 text-[#D9F99D]">
                         {chainConfig?.name || token.chain}
                       </span>
                       <span className="text-xs text-zinc-400">
-                        ${token.currentPrice < 0.01 ? token.currentPrice.toFixed(6) : token.currentPrice.toFixed(4)}
+                        {formatTokenPrice(token.currentPrice)}
                       </span>
                     </div>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      {token.name} • MC: ${token.mcap.toLocaleString()} • LP: ${token.liquidityUsd.toLocaleString()}
+                    <p className="text-xs text-zinc-400 mt-0.5 truncate">
+                      {token.name} • <span className="text-zinc-300 font-semibold">MC: {formatMarketCap(token.mcap)}</span> • <span>LP: {formatLiquidity(token.liquidityUsd)}</span>
                     </p>
                   </div>
                 </div>

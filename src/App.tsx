@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
+import { useAccount } from 'wagmi';
+
 import { 
   Navbar 
 } from './components/Navbar';
+import { 
+  SecurityGate 
+} from './components/SecurityGate';
 import { 
   VaultOverview 
 } from './components/VaultOverview';
@@ -11,6 +17,9 @@ import {
 import { 
   RawsightRadar 
 } from './components/RawsightRadar';
+import { 
+  EarlyLaunchFeed 
+} from './components/EarlyLaunchFeed';
 import { 
   LiveTradeFeed 
 } from './components/LiveTradeFeed';
@@ -33,6 +42,9 @@ import {
   SnipeModal 
 } from './components/SnipeModal';
 import {
+  TradingControlPanel
+} from './components/TradingControlPanel';
+import {
   Footer
 } from './components/Footer';
 
@@ -43,6 +55,8 @@ import {
   TradeLog, 
   LogType,
   MemeToken, 
+  EarlyLaunchToken,
+  WebSocketListenerStatus,
   Chain,
   LiveWalletState,
   TradingMode,
@@ -50,9 +64,10 @@ import {
   GasPriority
 } from './types';
 
+import { discoveryEngine } from './services/discoveryEngine';
+
 import { 
   INITIAL_MEME_RADAR, 
-  generateNewCandidateToken, 
   CHAINS_CONFIG 
 } from './data/mockTokens';
 
@@ -75,6 +90,13 @@ import {
   getBlockExplorerTxUrl
 } from './lib/web3Service';
 
+import {
+  saveVaultState,
+  loadVaultState,
+  getExclusiveBoundWallet,
+  saveExclusiveBoundWallet
+} from './lib/persistence';
+
 import { 
   Radio, 
   Zap, 
@@ -82,7 +104,9 @@ import {
   AlertTriangle, 
   CheckCircle, 
   ExternalLink,
-  Wallet
+  Wallet,
+  Lock,
+  RefreshCw
 } from 'lucide-react';
 
 const INITIAL_CONFIG: VaultConfig = {
@@ -127,7 +151,7 @@ const defaultVaultKeys = getOrCreateAutonomousVaultKeys();
 const INITIAL_WALLET_STATE: LiveWalletState = {
   isConnected: false,
   walletProvider: null,
-  address: defaultVaultKeys.solanaAddress,
+  address: '',
   chain: 'solana',
   vaultAddresses: {
     solana: defaultVaultKeys.solanaAddress,
@@ -144,8 +168,6 @@ const INITIAL_WALLET_STATE: LiveWalletState = {
   activeNetwork: 'Solana Mainnet-Beta',
 };
 
-const INITIAL_POSITIONS: TradePosition[] = [];
-
 const INITIAL_LOGS: TradeLog[] = [
   {
     id: 'log-sys-ready',
@@ -155,16 +177,44 @@ const INITIAL_LOGS: TradeLog[] = [
     tokenName: 'Rawsight Scrutiny Engine',
     chain: 'solana',
     amountUsd: 0,
-    note: 'Rawsight High-Velocity Multi-Chain Engine initialized with Mainnet RPC routing & Real Web3 signing.',
+    note: 'Private single-user trading terminal armed with Solflare, Phantom, and low-latency DEX RPC routing.',
     txHash: '0xgenesis...mainnet',
   },
 ];
 
 export default function App() {
+  // Solana & EVM Web3 Wallet Context Hooks
+  const { publicKey, connected: solConnected, wallet: solWallet, disconnect: disconnectSol } = useWallet();
+  const { connection: solConnection } = useConnection();
+  const { address: evmAddress, isConnected: evmConnected } = useAccount();
+
+  // Security Gate Master PIN Session State
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('rawsight_session_auth_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleUnlock = () => {
+    setIsUnlocked(true);
+  };
+
+  const handleLock = () => {
+    try {
+      sessionStorage.removeItem('rawsight_session_auth_v1');
+    } catch {}
+    setIsUnlocked(false);
+  };
+
+  // State Declarations
   const [config, setConfig] = useState<VaultConfig>(INITIAL_CONFIG);
   const [liveWallet, setLiveWallet] = useState<LiveWalletState>(INITIAL_WALLET_STATE);
-  const [positions, setPositions] = useState<TradePosition[]>(INITIAL_POSITIONS);
+  const [positions, setPositions] = useState<TradePosition[]>([]);
   const [radarTokens, setRadarTokens] = useState<MemeToken[]>(INITIAL_MEME_RADAR);
+  const [earlyTokens, setEarlyTokens] = useState<EarlyLaunchToken[]>(() => discoveryEngine.getInitialTokens());
+  const [wsListeners, setWsListeners] = useState<WebSocketListenerStatus[]>(() => discoveryEngine.getListeners());
   const [logs, setLogs] = useState<TradeLog[]>(INITIAL_LOGS);
 
   const [cashBalance, setCashBalance] = useState<number>(0.00);
@@ -177,8 +227,21 @@ export default function App() {
   const [isDepositOpen, setIsDepositOpen] = useState<boolean>(false);
   const [isWithdrawOpen, setIsWithdrawOpen] = useState<boolean>(false);
   const [isStrategyOpen, setIsStrategyOpen] = useState<boolean>(false);
+  const [strategyInitialTab, setStrategyInitialTab] = useState<'sizing' | 'execution' | 'scrutiny'>('sizing');
   const [isWalletOpen, setIsWalletOpen] = useState<boolean>(false);
   const [isScanning, setIsScanning] = useState<boolean>(false);
+
+  const handleOpenStrategyWithTab = (tab: 'sizing' | 'execution' | 'scrutiny' = 'sizing') => {
+    setStrategyInitialTab(tab);
+    setIsStrategyOpen(true);
+  };
+
+  const handleToggleTradingMode = () => {
+    setConfig(c => ({
+      ...c,
+      tradingMode: c.tradingMode === 'LIVE_MAINNET' ? 'SIMULATION_SANDBOX' : 'LIVE_MAINNET'
+    }));
+  };
 
   // Snipe Customization Modal State
   const [snipeCandidateToken, setSnipeCandidateToken] = useState<MemeToken | null>(null);
@@ -192,27 +255,136 @@ export default function App() {
     { time: '00:00', totalValue: 0, pnl: 0 },
   ]);
 
-  // Sync real on-chain balances on mount
-  useEffect(() => {
-    async function syncRealBalances() {
-      try {
-        const keys = getOrCreateAutonomousVaultKeys();
-        const live = await fetchLiveVaultBalances(
-          liveWallet.address || keys.solanaAddress,
-          keys.evmAddress,
-          config.customRpc
-        );
+  // Determine Active Connected Public Key (Solana or EVM)
+  const activeAddress = solConnected && publicKey 
+    ? publicKey.toBase58() 
+    : (evmConnected && evmAddress ? evmAddress : (liveWallet.isConnected ? liveWallet.address : ''));
 
-        setLiveWallet(prev => ({
-          ...prev,
-          balances: live,
-        }));
-      } catch (err) {
-        console.warn('Real node balance sync notice:', err);
+  // 1. SOLFLARE / PHANTOM WALLET ADAPTER SYNC
+  useEffect(() => {
+    if (solConnected && publicKey) {
+      const pubKeyStr = publicKey.toBase58();
+      const providerName = (solWallet?.adapter.name as any) || 'Solflare';
+
+      setLiveWallet(prev => ({
+        ...prev,
+        isConnected: true,
+        walletProvider: providerName,
+        address: pubKeyStr,
+        chain: 'solana',
+        vaultAddresses: {
+          solana: pubKeyStr,
+          bnb: defaultVaultKeys.evmAddress,
+          robinhood: defaultVaultKeys.evmAddress,
+        },
+        activeNetwork: 'Solana Mainnet-Beta',
+        rpcLatencyMs: 14,
+      }));
+
+      // Fetch live on-chain balance from Solana RPC
+      async function querySolBalance() {
+        try {
+          const live = await fetchLiveVaultBalances(pubKeyStr, defaultVaultKeys.evmAddress, config.customRpc);
+          setLiveWallet(prev => ({
+            ...prev,
+            balances: live,
+          }));
+        } catch (e) {
+          console.warn('Solana RPC query notice:', e);
+        }
+      }
+      querySolBalance();
+    } else if (evmConnected && evmAddress) {
+      setLiveWallet(prev => ({
+        ...prev,
+        isConnected: true,
+        walletProvider: 'MetaMask',
+        address: evmAddress,
+        chain: 'bnb',
+        vaultAddresses: {
+          solana: defaultVaultKeys.solanaAddress,
+          bnb: evmAddress,
+          robinhood: evmAddress,
+        },
+        activeNetwork: 'BNB Smart Chain (56)',
+        rpcLatencyMs: 20,
+      }));
+    }
+  }, [solConnected, publicKey, solWallet, evmConnected, evmAddress, config.customRpc]);
+
+  // 2. EXCLUSIVE PORTFOLIO & POSITION PERSISTENCE PER ENVIRONMENT & WALLET
+  // Load environment & wallet specific data with dual-layer IndexedDB + local fallback
+  useEffect(() => {
+    const addrKey = activeAddress || defaultVaultKeys.solanaAddress;
+    
+    // Save exclusive bound wallet keypair
+    if (activeAddress) {
+      saveExclusiveBoundWallet(activeAddress, defaultVaultKeys.evmAddress);
+    }
+
+    if (!activeAddress && config.tradingMode === 'LIVE_MAINNET') {
+      // Disconnected live mainnet state
+      setPositions([]);
+      setCashBalance(0.00);
+      setRealizedPnl(0.00);
+      setWinningTrades(0);
+      setLosingTrades(0);
+      setRugsShielded(0);
+      setInsiderDodged(0);
+      return;
+    }
+
+    async function hydrate() {
+      const persisted = await loadVaultState(config.tradingMode, addrKey);
+      if (persisted) {
+        setPositions(persisted.positions || []);
+        setCashBalance(typeof persisted.cashBalance === 'number' ? persisted.cashBalance : (config.tradingMode === 'LIVE_MAINNET' ? 0 : 5000));
+        setLogs(persisted.logs || (config.tradingMode === 'LIVE_MAINNET' ? [] : INITIAL_LOGS));
+        if (persisted.stats) {
+          setRealizedPnl(persisted.stats.realizedPnlUsd || 0);
+          setWinningTrades(persisted.stats.winningTrades || 0);
+          setLosingTrades(persisted.stats.losingTrades || 0);
+          setRugsShielded(persisted.stats.rugsShieldedCount || 0);
+          setInsiderDodged(persisted.stats.insiderDumpsDodgedCount || 0);
+          if (persisted.stats.historicalCurve && persisted.stats.historicalCurve.length > 0) {
+            setChartData(persisted.stats.historicalCurve);
+          }
+        }
+      } else {
+        setPositions([]);
+        setCashBalance(config.tradingMode === 'LIVE_MAINNET' ? 0.00 : 5000.00);
+        setLogs(config.tradingMode === 'LIVE_MAINNET' ? [] : INITIAL_LOGS);
+        setRealizedPnl(0.00);
+        setWinningTrades(0);
+        setLosingTrades(0);
+        setRugsShielded(0);
+        setInsiderDodged(0);
       }
     }
-    syncRealBalances();
-  }, []);
+
+    hydrate();
+  }, [activeAddress, config.tradingMode]);
+
+  // Dual-Layer Save (IndexedDB + LocalStorage + Backend Sync)
+  useEffect(() => {
+    const addrKey = activeAddress || defaultVaultKeys.solanaAddress;
+    saveVaultState(config.tradingMode, addrKey, {
+      cashBalance,
+      positions,
+      logs: logs.slice(0, 50),
+      config,
+      stats: {
+        realizedPnlUsd: realizedPnl,
+        totalTrades: winningTrades + losingTrades,
+        winningTrades,
+        losingTrades,
+        rugsShieldedCount: rugsShielded,
+        insiderDumpsDodgedCount: insiderDodged,
+        historicalCurve: chartData,
+      },
+      lastSaved: Date.now(),
+    });
+  }, [cashBalance, positions, logs, config, realizedPnl, winningTrades, losingTrades, rugsShielded, insiderDodged, chartData, activeAddress]);
 
   // Compute calculated financials
   const allocatedInPositions = positions.reduce((acc, p) => acc + p.investedAmountUsd, 0);
@@ -242,20 +414,21 @@ export default function App() {
     if (type === 'deposit') playDepositSound();
   }, [config.audioAlerts]);
 
-  // Dynamic Sizing Engine
+  // Dynamic Sizing Engine with strict $1.00 USD floor
   const computeStrategyAllocation = useCallback((token: MemeToken): number => {
     let size = config.allocationPerTradeUsd;
+    const minFloor = Math.max(1.0, config.minTradeSizeUsd || 1.0);
 
     if (config.sizingMode === 'PERCENT_NAV') {
       const targetFromNav = (totalNav * config.allocationPercentNav) / 100;
-      size = Math.max(config.minTradeSizeUsd, Math.min(config.maxTradeSizeUsd, targetFromNav));
+      size = Math.max(minFloor, Math.min(config.maxTradeSizeUsd, targetFromNav));
     } else if (config.sizingMode === 'SCRUTINY_WEIGHTED') {
       const alphaMultiplier = (token.smartMoneyScore / 70) * (token.lpLockedPercent / 90);
       size = config.allocationPerTradeUsd * Math.max(0.6, Math.min(2.0, alphaMultiplier));
     }
 
-    size = Math.max(config.minTradeSizeUsd, Math.min(config.maxTradeSizeUsd, size));
-    return Number(size.toFixed(2));
+    size = Math.max(minFloor, Math.min(config.maxTradeSizeUsd, size));
+    return Math.max(1.0, Number(size.toFixed(2)));
   }, [config, totalNav]);
 
   // Close Position handler
@@ -319,12 +492,50 @@ export default function App() {
     });
   }, [triggerAudio]);
 
-  // Execute Snipe
+  // Execute Snipe with $1.00 USD strict minimum execution floor & guardrails
   const executeSnipe = useCallback(async (token: MemeToken, customAmountUsd?: number) => {
-    const rawTradeAmount = customAmountUsd || computeStrategyAllocation(token);
-    const tradeAmount = Math.min(cashBalance, rawTradeAmount);
+    const rawTradeAmount = customAmountUsd !== undefined ? customAmountUsd : computeStrategyAllocation(token);
+    let tradeAmount = rawTradeAmount;
 
-    if (tradeAmount < config.minTradeSizeUsd || cashBalance < config.minTradeSizeUsd) {
+    // Guardrail Handling: If calculated or custom evaluates to less than $1.00 USD
+    if (tradeAmount < 1.0) {
+      if (cashBalance >= 1.0) {
+        tradeAmount = 1.0; // Automatically default to $1.00 if funds allow
+      } else {
+        // Block the transaction with notice
+        const blockLog: TradeLog = {
+          id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          timestamp: Date.now(),
+          type: 'RADAR_REJECT',
+          tokenSymbol: token.symbol,
+          tokenName: token.name,
+          chain: token.chain,
+          amountUsd: rawTradeAmount,
+          note: `Execution blocked: Minimum vault execution is $1.00. (Available balance: $${cashBalance.toFixed(2)} USD).`,
+          txHash: '0x0000000000000000',
+        };
+        setLogs(l => [blockLog, ...l.slice(0, 40)]);
+        return;
+      }
+    }
+
+    // Ensure within available cash
+    tradeAmount = Math.min(cashBalance, tradeAmount);
+
+    const minFloor = Math.max(1.0, config.minTradeSizeUsd || 1.0);
+    if (tradeAmount < 1.0 || cashBalance < 1.0 || tradeAmount < minFloor || cashBalance < minFloor) {
+      const blockLog: TradeLog = {
+        id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: Date.now(),
+        type: 'RADAR_REJECT',
+        tokenSymbol: token.symbol,
+        tokenName: token.name,
+        chain: token.chain,
+        amountUsd: tradeAmount,
+        note: `Execution blocked: Minimum vault execution is $1.00. (Floor: $${minFloor.toFixed(2)} USD, Available: $${cashBalance.toFixed(2)} USD).`,
+        txHash: '0x0000000000000000',
+      };
+      setLogs(l => [blockLog, ...l.slice(0, 40)]);
       return;
     }
 
@@ -395,7 +606,7 @@ export default function App() {
     triggerAudio('snipe');
 
     const sizingLabel = customAmountUsd 
-      ? `Custom Sized ($${tradeAmount})` 
+      ? `Custom Sized ($${tradeAmount.toFixed(2)})` 
       : `Auto Strategy (${config.sizingMode.replace('_', ' ')})`;
 
     const newLog: TradeLog = {
@@ -413,7 +624,7 @@ export default function App() {
     setLogs(l => [newLog, ...l.slice(0, 40)]);
   }, [cashBalance, config, positions.length, computeStrategyAllocation, triggerAudio]);
 
-  // Click on "Snipe Now" on Radar -> Opens Snipe Modal to customize amount
+  // Click on "Snipe Now" on Radar -> Opens Snipe Modal
   const handleOpenSnipeModal = useCallback((token: MemeToken) => {
     setSnipeCandidateToken(token);
     setIsSnipeModalOpen(true);
@@ -426,56 +637,16 @@ export default function App() {
     setIsSnipeModalOpen(true);
   }, []);
 
-  // Manual Trigger: Simulate Rug Attack on a position
-  const handleSimulateRug = useCallback((positionId: string) => {
-    const pos = positions.find(p => p.id === positionId);
-    if (!pos) return;
-
-    // Simulate dev LP pull -> Rawsight emergency closes position
-    const savedPnlPercent = -1.8; // only lost micro slippage
-    const savedPnlUsd = (pos.investedAmountUsd * savedPnlPercent) / 100;
-
-    closePosition(
-      positionId,
-      'SELL_RUG_SHIELD',
-      `EMERGENCY RUG SHIELD TRIGGERED: Dev unlocked & drained 60% LP pool on ${CHAINS_CONFIG[pos.chain].dex} -> Auto liquidated in 95ms with 98.2% capital preserved!`,
-      { usd: savedPnlUsd, percent: savedPnlPercent }
-    );
-  }, [positions, closePosition]);
-
-  // Manual Trigger: Simulate Moon Pump to test Take-Profit auto-exit
-  const handleSimulatePump = useCallback((positionId: string) => {
-    setPositions(prev => prev.map(p => {
-      if (p.id === positionId) {
-        const pumpedPnlPercent = p.takeProfitTargetPercent + 12;
-        const newCurrentPrice = p.entryPrice * (1 + pumpedPnlPercent / 100);
-        const newPnlUsd = (p.investedAmountUsd * pumpedPnlPercent) / 100;
-        return {
-          ...p,
-          currentPrice: newCurrentPrice,
-          currentPnlPercent: pumpedPnlPercent,
-          currentPnlUsd: newPnlUsd,
-          highestPnlPercent: Math.max(p.highestPnlPercent, pumpedPnlPercent),
-        };
-      }
-      return p;
-    }));
-  }, []);
-
-  // Manual Scan Trigger
+  // Manual Scan Trigger - Real On-Chain / Launchpad Query
   const handleTriggerManualScan = useCallback(async () => {
     setIsScanning(true);
     try {
       const liveTokens = await fetchLiveDexScreenerTokens();
       if (liveTokens && liveTokens.length > 0) {
         setRadarTokens(liveTokens);
-      } else {
-        const fresh = [generateNewCandidateToken(), generateNewCandidateToken()];
-        setRadarTokens(prev => [...fresh, ...prev.slice(0, 7)]);
       }
-    } catch (e) {
-      const fresh = [generateNewCandidateToken(), generateNewCandidateToken()];
-      setRadarTokens(prev => [...fresh, ...prev.slice(0, 7)]);
+    } catch (err) {
+      console.warn('Manual scan fetch error:', err);
     } finally {
       setIsScanning(false);
     }
@@ -527,6 +698,45 @@ export default function App() {
       closePosition(pos.id, 'CLOSED_MANUAL', 'PANIC CLOSE: All positions liquidated to cash reserve.');
     });
   }, [positions, closePosition]);
+
+  // Discovery Engine WebSocket and Launchpad Stream Subscription
+  useEffect(() => {
+    discoveryEngine.start();
+
+    const unsubTokens = discoveryEngine.subscribe((newToken) => {
+      setEarlyTokens(prev => {
+        if (prev.some(t => t.contractAddress === newToken.contractAddress)) return prev;
+        return [newToken, ...prev.slice(0, 35)];
+      });
+
+      // Syndicate to Radar
+      setRadarTokens(prev => {
+        if (prev.some(t => t.contractAddress === newToken.contractAddress)) return prev;
+        return [newToken, ...prev.slice(0, 15)];
+      });
+
+      // Automated Sniping check on streaming launchpad/DEX events
+      if (
+        config.autoTradeEnabled &&
+        newToken.scrutinyStatus === 'PASSED_RAWSIGHT' &&
+        config.allowedChains[newToken.chain] &&
+        cashBalance >= 1.0 &&
+        cashBalance >= (config.minTradeSizeUsd || 1.0) &&
+        positions.length < config.maxActivePositions
+      ) {
+        executeSnipe(newToken);
+      }
+    });
+
+    const unsubStatus = discoveryEngine.subscribeStatus((updatedListeners) => {
+      setWsListeners(updatedListeners);
+    });
+
+    return () => {
+      unsubTokens();
+      unsubStatus();
+    };
+  }, [config, cashBalance, positions.length, executeSnipe]);
 
   // Live Auto Trading & Position Monitor Engine (Tick loop)
   useEffect(() => {
@@ -587,21 +797,25 @@ export default function App() {
         }
       });
 
-      // 3. Autonomous Discovery & Sniping with Dynamic Strategy Sizing
-      if (config.autoTradeEnabled && Math.random() > 0.65) {
-        // Occasionally generate fresh token
-        const freshToken = generateNewCandidateToken();
-        setRadarTokens(prev => [freshToken, ...prev.slice(0, 8)]);
+      // 3. Autonomous Sniping on Real Live Launchpad Tokens ($1.00 minimum floor)
+      if (config.autoTradeEnabled && radarTokens.length > 0 && Math.random() > 0.60) {
+        // Pick an un-sniped live token from radar
+        const availableLiveTokens = radarTokens.filter(
+          t => !positions.some(p => p.token.contractAddress.toLowerCase() === t.contractAddress.toLowerCase())
+        );
 
-        // Check if candidate passes and chain is enabled
-        const isChainAllowed = config.allowedChains[freshToken.chain];
-        if (
-          freshToken.scrutinyStatus === 'PASSED_RAWSIGHT' &&
-          isChainAllowed &&
-          cashBalance >= config.minTradeSizeUsd &&
-          positions.length < config.maxActivePositions
-        ) {
-          executeSnipe(freshToken);
+        if (availableLiveTokens.length > 0) {
+          const targetToken = availableLiveTokens[Math.floor(Math.random() * availableLiveTokens.length)];
+          const isChainAllowed = config.allowedChains[targetToken.chain];
+          if (
+            targetToken.scrutinyStatus === 'PASSED_RAWSIGHT' &&
+            isChainAllowed &&
+            cashBalance >= 1.0 &&
+            cashBalance >= (config.minTradeSizeUsd || 1.0) &&
+            positions.length < config.maxActivePositions
+          ) {
+            executeSnipe(targetToken);
+          }
         }
       }
 
@@ -617,202 +831,258 @@ export default function App() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [config, cashBalance, positions, closePosition, executeSnipe]);
+  }, [config, cashBalance, positions, radarTokens, closePosition, executeSnipe]);
 
   return (
-    <div className="min-h-screen bg-[#050505] text-[#D9F99D] flex flex-col font-mono selection:bg-[#D9F99D]/30 selection:text-[#D9F99D] overflow-x-hidden">
-      {/* Navigation Header */}
-      <Navbar
-        autoTradeEnabled={config.autoTradeEnabled}
-        onToggleAutoTrade={() => setConfig(c => ({ ...c, autoTradeEnabled: !c.autoTradeEnabled }))}
-        audioAlerts={config.audioAlerts}
-        onToggleAudio={() => setConfig(c => ({ ...c, audioAlerts: !c.audioAlerts }))}
-        onOpenDeposit={() => setIsDepositOpen(true)}
-        onOpenStrategy={() => setIsStrategyOpen(true)}
-        onOpenWallet={() => setIsWalletOpen(true)}
-        liveWallet={liveWallet}
-        tradingMode={config.tradingMode}
-        activePositionsCount={positions.length}
-        activeChains={config.allowedChains}
-      />
+    <SecurityGate
+      isUnlocked={isUnlocked}
+      onUnlock={handleUnlock}
+      onLock={handleLock}
+    >
+      <div className="min-h-screen bg-[#050505] text-[#D9F99D] flex flex-col font-mono selection:bg-[#D9F99D]/30 selection:text-[#D9F99D] overflow-x-hidden">
+        {/* Navigation Header */}
+        <Navbar
+          autoTradeEnabled={config.autoTradeEnabled}
+          onToggleAutoTrade={() => setConfig(c => ({ ...c, autoTradeEnabled: !c.autoTradeEnabled }))}
+          audioAlerts={config.audioAlerts}
+          onToggleAudio={() => setConfig(c => ({ ...c, audioAlerts: !c.audioAlerts }))}
+          onOpenDeposit={() => setIsDepositOpen(true)}
+          onOpenStrategy={() => handleOpenStrategyWithTab('sizing')}
+          onOpenStrategyTab={handleOpenStrategyWithTab}
+          onOpenWallet={() => setIsWalletOpen(true)}
+          onLockTerminal={handleLock}
+          liveWallet={liveWallet}
+          tradingMode={config.tradingMode}
+          onToggleTradingMode={handleToggleTradingMode}
+          activePositionsCount={positions.length}
+          activeChains={config.allowedChains}
+        />
 
-      {/* Real Mainnet Live Action Bar */}
-      <div className="bg-[#0A0A0A] border-b border-[#D9F99D]/30 py-2.5 px-4 sm:px-6 lg:px-8 font-mono">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-2.5 w-2.5 relative shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#D9F99D] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#D9F99D]"></span>
-            </span>
+        {/* Real Mainnet Live Action Bar */}
+        <div className="bg-[#0A0A0A] border-b border-[#D9F99D]/30 py-2.5 px-4 sm:px-6 lg:px-8 font-mono">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-2.5 w-2.5 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#D9F99D] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#D9F99D]"></span>
+              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-white uppercase tracking-wider text-[11px] sm:text-xs">
+                  {config.tradingMode === 'LIVE_MAINNET' ? 'LIVE ON-CHAIN MAINNET ACTIVE' : 'SIMULATION MODE'}
+                </span>
+                <span className="text-zinc-500 hidden sm:inline">•</span>
+                <span className="text-zinc-400 text-[11px] hidden md:inline">
+                  {config.tradingMode === 'LIVE_MAINNET' 
+                    ? 'Decentralized order routing via Solana Raydium, BSC PancakeSwap & Robinhood Chain'
+                    : 'Algorithmic sandbox backtesting'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <button
+                onClick={() => setIsWalletOpen(true)}
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 min-h-[40px] rounded-md bg-[#D9F99D]/10 border border-[#D9F99D]/40 text-[#D9F99D] hover:bg-[#D9F99D] hover:text-black transition-all text-[11px] font-bold uppercase cursor-pointer"
+              >
+                <Wallet className="w-3.5 h-3.5" />
+                <span>
+                  {liveWallet?.isConnected 
+                    ? `${liveWallet.walletProvider || 'Key'}: ${liveWallet.address.slice(0, 4)}...${liveWallet.address.slice(-3)}` 
+                    : 'Connect Solflare / Phantom'}
+                </span>
+              </button>
+              <button
+                onClick={handleToggleTradingMode}
+                className={`px-3 py-1.5 min-h-[40px] rounded-md text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+                  config.tradingMode === 'LIVE_MAINNET'
+                    ? 'bg-zinc-800 text-zinc-300 hover:text-white'
+                    : 'bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30'
+                }`}
+              >
+                {config.tradingMode === 'LIVE_MAINNET' ? 'Switch to Sandbox' : 'Go Live Mainnet'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Transaction Alert Toast */}
+        {lastTxAlert && (
+          <div className="bg-[#D9F99D] text-black px-4 py-2.5 text-xs font-mono font-bold flex items-center justify-between max-w-7xl mx-auto w-full my-2 rounded-md shadow-lg">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-white uppercase tracking-wider text-[11px] sm:text-xs">
-                {config.tradingMode === 'LIVE_MAINNET' ? 'LIVE ON-CHAIN MAINNET ACTIVE' : 'SIMULATION MODE'}
-              </span>
-              <span className="text-zinc-500 hidden sm:inline">•</span>
-              <span className="text-zinc-400 text-[11px] hidden md:inline">
-                {config.tradingMode === 'LIVE_MAINNET' 
-                  ? 'Decentralized order routing via Solana Raydium, BSC PancakeSwap & Robinhood Chain'
-                  : 'Algorithmic sandbox backtesting'}
-              </span>
+              <CheckCircle className="w-4 h-4 shrink-0" />
+              <span>{lastTxAlert.message}</span>
+              {lastTxAlert.url && (
+                <a 
+                  href={lastTxAlert.url} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="underline flex items-center gap-1 hover:opacity-80 ml-2"
+                >
+                  <span>View On-Chain Explorer</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+            <button 
+              onClick={() => setLastTxAlert(null)}
+              className="text-black font-black hover:opacity-70 ml-2 text-sm"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Wallet Disconnected Notice Banner */}
+        {!liveWallet.isConnected && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 w-full">
+            <div className="p-3 sm:p-4 rounded-xl bg-zinc-950/80 border border-[#D9F99D]/20 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5 text-zinc-300">
+                <div className="w-8 h-8 rounded-lg bg-[#D9F99D]/10 border border-[#D9F99D]/30 flex items-center justify-center text-[#D9F99D] shrink-0">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-white block">Private Key Protected Terminal</span>
+                  <span className="text-[11px] text-zinc-400">
+                    Connect your Solflare or Phantom wallet to decrypt your private positions and stream real on-chain liquidity.
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setIsWalletOpen(true)}
+                className="px-4 py-2 min-h-[44px] rounded-lg text-xs font-black uppercase tracking-wider bg-[#D9F99D] text-black hover:bg-[#bef264] transition-all cursor-pointer shrink-0 shadow-md shadow-[#D9F99D]/10"
+              >
+                Connect Wallet
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Main Trading Terminal Canvas */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+          {/* 1. Top Bento Row: Vault Overview NAV Hero */}
+          <VaultOverview
+            vaultState={vaultState}
+            vaultConfig={config}
+            onOpenDeposit={() => setIsDepositOpen(true)}
+            onOpenWithdraw={() => setIsWithdrawOpen(true)}
+            onEmergencyCloseAll={handleEmergencyCloseAll}
+            onOpenStrategy={() => handleOpenStrategyWithTab('sizing')}
+            activePositionsCount={positions.length}
+          />
+
+          {/* 2. Active Positions: PLACED DIRECTLY BELOW VAULT OVERVIEW NAV HERO */}
+          <ActivePositions
+            positions={positions}
+            onManualClose={(id) => closePosition(id, 'CLOSED_MANUAL')}
+            takeProfitTargetPercent={config.takeProfitPercent}
+          />
+
+          {/* 3. Performance Chart & Equity Curve */}
+          <PerformanceChart
+            data={chartData}
+            currentNav={totalNav}
+            realizedPnl={realizedPnl}
+          />
+
+          {/* 4. Streamlined 2-Column Discovery & Scrutiny Bento */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Column (7 cols): Early Launchpad Stream */}
+            <div className="lg:col-span-7 space-y-6">
+              <EarlyLaunchFeed
+                tokens={earlyTokens}
+                listeners={wsListeners}
+                onSnipeToken={handleOpenSnipeModal}
+                vaultConfig={config}
+                onUpdateVaultConfig={(updated) => setConfig(c => ({ ...c, ...updated }))}
+                cashBalanceUsd={cashBalance}
+              />
+            </div>
+
+            {/* Right Column (5 cols): Multi-Chain Scrutiny Radar */}
+            <div className="lg:col-span-5 space-y-6">
+              <RawsightRadar
+                tokens={radarTokens}
+                onTriggerManualScan={handleTriggerManualScan}
+                onSnipeToken={handleOpenSnipeModal}
+                isScanning={isScanning}
+                onAddCustomToken={handleAddCustomToken}
+              />
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            <button
-              onClick={() => setIsWalletOpen(true)}
-              className="flex items-center justify-center gap-1.5 px-3 py-1.5 min-h-[36px] rounded-sm bg-[#D9F99D]/10 border border-[#D9F99D]/40 text-[#D9F99D] hover:bg-[#D9F99D] hover:text-black transition-all text-[11px] font-bold uppercase cursor-pointer"
-            >
-              <Wallet className="w-3.5 h-3.5" />
-              <span>{liveWallet?.isConnected ? `Key: ${liveWallet.address.slice(0, 4)}...${liveWallet.address.slice(-3)}` : 'Connect Live Wallet'}</span>
-            </button>
-            <button
-              onClick={() => setConfig(c => ({
-                ...c,
-                tradingMode: c.tradingMode === 'LIVE_MAINNET' ? 'SIMULATION_SANDBOX' : 'LIVE_MAINNET'
-              }))}
-              className={`px-3 py-1.5 min-h-[36px] rounded-sm text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
-                config.tradingMode === 'LIVE_MAINNET'
-                  ? 'bg-zinc-800 text-zinc-300 hover:text-white'
-                  : 'bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30'
-              }`}
-            >
-              {config.tradingMode === 'LIVE_MAINNET' ? 'Switch to Simulation' : 'Go Live Mainnet'}
-            </button>
-          </div>
-        </div>
-      </div>
+          {/* 5. Transaction Receipt Logs & Audit Trail */}
+          <LiveTradeFeed
+            logs={logs}
+            onClearLogs={() => setLogs([])}
+          />
+        </main>
 
-      {/* Transaction Alert Toast */}
-      {lastTxAlert && (
-        <div className="bg-[#D9F99D] text-black px-4 py-2.5 text-xs font-mono font-bold flex items-center justify-between max-w-7xl mx-auto w-full my-2 rounded-md shadow-lg">
-          <div className="flex items-center gap-2 flex-wrap">
-            <CheckCircle className="w-4 h-4 shrink-0" />
-            <span>{lastTxAlert.message}</span>
-            {lastTxAlert.url && (
-              <a 
-                href={lastTxAlert.url} 
-                target="_blank" 
-                rel="noreferrer" 
-                className="underline flex items-center gap-1 hover:opacity-80 ml-2"
-              >
-                <span>View On-Chain Explorer</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            )}
-          </div>
-          <button onClick={() => setLastTxAlert(null)} className="text-black font-black p-1 hover:opacity-75 cursor-pointer">
-            ✕
-          </button>
-        </div>
-      )}
+        {/* Footer with RPC and Security Status */}
+        <Footer
+          onOpenWallet={() => setIsWalletOpen(true)}
+          onOpenStrategy={() => handleOpenStrategyWithTab('execution')}
+        />
 
-      {/* Main Trading Terminal Canvas */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Vault Overview & Key Metrics Bento Grid */}
-        <VaultOverview
-          vaultState={vaultState}
+        {/* Strategy Parameters Customization Modal */}
+        <VaultStrategyModal
+          isOpen={isStrategyOpen}
+          onClose={() => setIsStrategyOpen(false)}
+          config={config}
+          onSaveConfig={(newConfig) => setConfig({
+            ...newConfig,
+            minTradeSizeUsd: Math.max(1.0, newConfig.minTradeSizeUsd || 1.0),
+            allocationPerTradeUsd: Math.max(1.0, newConfig.allocationPerTradeUsd || 1.0),
+          })}
+          totalNavUsd={totalNav}
+          initialTab={strategyInitialTab}
+        />
+
+        {/* Deposit Capital Modal */}
+        <DepositModal
+          isOpen={isDepositOpen}
+          onClose={() => setIsDepositOpen(false)}
+          onConfirmDeposit={handleConfirmDeposit}
+          walletState={liveWallet}
+          onSyncLiveBalances={handleTriggerManualScan}
+          tradingMode={config.tradingMode}
+        />
+
+        {/* Withdraw Capital Modal */}
+        <WithdrawModal
+          isOpen={isWithdrawOpen}
+          onClose={() => setIsWithdrawOpen(false)}
+          availableBalance={cashBalance}
+          walletState={liveWallet}
+          tradingMode={config.tradingMode}
+          onConfirmWithdraw={handleConfirmWithdraw}
+        />
+
+        {/* Live Multi-Chain Wallet, Keys & Private RPC Management Modal */}
+        <LiveWalletModal
+          isOpen={isWalletOpen}
+          onClose={() => setIsWalletOpen(false)}
+          walletState={liveWallet}
+          onUpdateWalletState={(newWallet) => setLiveWallet(newWallet)}
           vaultConfig={config}
-          onOpenDeposit={() => setIsDepositOpen(true)}
-          onOpenWithdraw={() => setIsWithdrawOpen(true)}
-          onEmergencyCloseAll={handleEmergencyCloseAll}
-          onOpenStrategy={() => setIsStrategyOpen(true)}
-          activePositionsCount={positions.length}
+          onUpdateConfig={(newConfig) => setConfig(newConfig)}
+          onDepositFromLiveWallet={(amountUsd, chain) => handleConfirmDeposit(amountUsd, chain)}
         />
 
-        {/* Equity Curve Chart */}
-        <PerformanceChart
-          data={chartData}
-          currentNav={totalNav}
-          realizedPnl={realizedPnl}
+        {/* Snipe Execution Customization Modal */}
+        <SnipeModal
+          isOpen={isSnipeModalOpen}
+          onClose={() => {
+            setIsSnipeModalOpen(false);
+            setSnipeCandidateToken(null);
+          }}
+          token={snipeCandidateToken}
+          vaultConfig={config}
+          cashBalanceUsd={cashBalance}
+          totalNavUsd={totalNav}
+          onExecuteSnipe={(token, customAmountUsd) => executeSnipe(token, customAmountUsd)}
         />
-
-        {/* Live Active Vault Positions */}
-        <ActivePositions
-          positions={positions}
-          onManualClose={(id) => closePosition(id, 'CLOSED_MANUAL')}
-          onSimulateRug={handleSimulateRug}
-          onSimulatePump={handleSimulatePump}
-          takeProfitTargetPercent={config.takeProfitPercent}
-        />
-
-        {/* Rawsight Multi-Chain Scrutiny Radar */}
-        <RawsightRadar
-          tokens={radarTokens}
-          onTriggerManualScan={handleTriggerManualScan}
-          onSnipeToken={handleOpenSnipeModal}
-          isScanning={isScanning}
-          onAddCustomToken={handleAddCustomToken}
-        />
-
-        {/* Live Continuous Execution Log Feed */}
-        <LiveTradeFeed
-          logs={logs}
-        />
-      </main>
-
-      {/* Footer */}
-      <Footer
-        onOpenWallet={() => setIsWalletOpen(true)}
-        onOpenStrategy={() => setIsStrategyOpen(true)}
-      />
-
-      {/* Modals */}
-      <DepositModal
-        isOpen={isDepositOpen}
-        onClose={() => setIsDepositOpen(false)}
-        onConfirmDeposit={handleConfirmDeposit}
-        walletState={liveWallet}
-        onSyncLiveBalances={async () => {
-          const keys = getOrCreateAutonomousVaultKeys();
-          const live = await fetchLiveVaultBalances(keys.solanaAddress, keys.evmAddress, config.customRpc);
-          setLiveWallet((prev) => ({
-            ...prev,
-            balances: live,
-          }));
-        }}
-      />
-
-      <WithdrawModal
-        isOpen={isWithdrawOpen}
-        onClose={() => setIsWithdrawOpen(false)}
-        availableBalance={cashBalance}
-        walletState={liveWallet}
-        onConfirmWithdraw={handleConfirmWithdraw}
-        customRpcUrl={config.customRpc.solana}
-      />
-
-      <VaultStrategyModal
-        isOpen={isStrategyOpen}
-        onClose={() => setIsStrategyOpen(false)}
-        config={config}
-        onSaveConfig={(newCfg) => setConfig(newCfg)}
-        totalNavUsd={totalNav}
-      />
-
-      <LiveWalletModal
-        isOpen={isWalletOpen}
-        onClose={() => setIsWalletOpen(false)}
-        walletState={liveWallet}
-        onUpdateWalletState={(newWallet) => setLiveWallet(newWallet)}
-        vaultConfig={config}
-        onUpdateConfig={(newConfig) => setConfig(newConfig)}
-        onDepositFromLiveWallet={handleConfirmDeposit}
-      />
-
-      <SnipeModal
-        isOpen={isSnipeModalOpen}
-        token={snipeCandidateToken}
-        onClose={() => {
-          setIsSnipeModalOpen(false);
-          setSnipeCandidateToken(null);
-        }}
-        onExecuteSnipe={(token, customAmount) => {
-          executeSnipe(token, customAmount);
-        }}
-        vaultConfig={config}
-        cashBalanceUsd={cashBalance}
-        totalNavUsd={totalNav}
-      />
-    </div>
+      </div>
+    </SecurityGate>
   );
 }

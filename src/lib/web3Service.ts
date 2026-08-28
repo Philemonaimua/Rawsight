@@ -188,9 +188,18 @@ export async function fetchLiveVaultBalances(
 // Detect installed real Web3 wallet extensions in browser
 export function detectAvailableWallets() {
   const hasPhantom = Boolean(window?.phantom?.solana?.isPhantom || window?.solana?.isPhantom);
-  const hasSolflare = Boolean(window?.solana?.isSolflare);
+  const hasSolflare = Boolean(
+    (window as any)?.solflare?.isSolflare ||
+    (window as any)?.solflare ||
+    window?.solana?.isSolflare
+  );
   const hasBackpack = Boolean(window?.backpack?.solana || (window?.solana as any)?.isBackpack);
-  const hasSolana = Boolean(window?.solana || window?.phantom?.solana || window?.backpack?.solana);
+  const hasSolana = Boolean(
+    window?.solana || 
+    window?.phantom?.solana || 
+    window?.backpack?.solana ||
+    (window as any)?.solflare
+  );
   const hasEthereum = Boolean(window?.ethereum);
   const isMetaMask = Boolean(window?.ethereum?.isMetaMask && !window?.ethereum?.isRabby);
   const isRabby = Boolean(window?.ethereum?.isRabby);
@@ -240,10 +249,10 @@ export async function connectRealSolanaWallet(
     solanaProvider = window.backpack.solana;
   } else if (preferredWallet === 'phantom' && window?.phantom?.solana) {
     solanaProvider = window.phantom.solana;
-  } else if (preferredWallet === 'solflare' && window?.solana?.isSolflare) {
-    solanaProvider = window.solana;
+  } else if (preferredWallet === 'solflare' && ((window as any)?.solflare || window?.solana?.isSolflare)) {
+    solanaProvider = (window as any)?.solflare || window.solana;
   } else {
-    solanaProvider = window?.phantom?.solana || window?.backpack?.solana || window?.solana;
+    solanaProvider = (window as any)?.solflare || window?.phantom?.solana || window?.backpack?.solana || window?.solana;
   }
   
   if (!solanaProvider) {
