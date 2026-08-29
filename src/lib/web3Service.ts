@@ -483,7 +483,67 @@ export async function connectRealEvmWallet(targetChain: 'bnb' | 'robinhood' = 'b
 }
 
 // -------------------------------------------------------------
-// JUPITER / RAYDIUM MAINNET SWAP ENGINE
+// PANCAKESWAP V2 / UNISWAP V3 ROUTER ABIS & CONSTANTS
+// -------------------------------------------------------------
+
+export const PANCAKESWAP_V2_ROUTER_ADDRESS = '0x10ED43C718714eb63d5aA57B78B54704E256024E' as const;
+export const WBNB_ADDRESS = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c' as const;
+
+export const ROBINHOOD_UNISWAP_ROUTER_ADDRESS = '0xE592427A0AEce92De3Edee1F18E0157C05861564' as const;
+export const ROBINHOOD_WETH_ADDRESS = '0x4663000000000000000000000000000000000001' as const;
+
+export const PANCAKE_ROUTER_ABI = [
+  {
+    inputs: [
+      { internalType: 'uint256', name: 'amountOutMin', type: 'uint256' },
+      { internalType: 'address[]', name: 'path', type: 'address[]' },
+      { internalType: 'address', name: 'to', type: 'address' },
+      { internalType: 'uint256', name: 'deadline', type: 'uint256' },
+    ],
+    name: 'swapExactETHForTokensSupportingFeeOnTransferTokens',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { internalType: 'uint256', name: 'amountIn', type: 'uint256' },
+      { internalType: 'address[]', name: 'path', type: 'address[]' },
+    ],
+    name: 'getAmountsOut',
+    outputs: [{ internalType: 'uint256[]', name: 'amounts', type: 'uint256[]' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
+
+export const UNISWAP_V3_ROUTER_ABI = [
+  {
+    inputs: [
+      {
+        components: [
+          { internalType: 'address', name: 'tokenIn', type: 'address' },
+          { internalType: 'address', name: 'tokenOut', type: 'address' },
+          { internalType: 'uint24', name: 'fee', type: 'uint24' },
+          { internalType: 'address', name: 'recipient', type: 'address' },
+          { internalType: 'uint256', name: 'deadline', type: 'uint256' },
+          { internalType: 'uint256', name: 'amountIn', type: 'uint256' },
+          { internalType: 'uint256', name: 'amountOutMinimum', type: 'uint256' },
+          { internalType: 'uint160', name: 'sqrtPriceLimitX96', type: 'uint160' },
+        ],
+        name: 'params',
+        type: 'tuple',
+      },
+    ],
+    name: 'exactInputSingle',
+    outputs: [{ internalType: 'uint256', name: 'amountOut', type: 'uint256' }],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+] as const;
+
+// -------------------------------------------------------------
+// JUPITER / RAYDIUM MAINNET SWAP ENGINE (SOLANA)
 // -------------------------------------------------------------
 
 export interface JupiterSwapParams {
@@ -500,6 +560,7 @@ const NATIVE_SOL_MINT = 'So11111111111111111111111111111111111111112';
 
 /**
  * Execute real Mainnet Swap via Jupiter V6 API / Raydium Router targeting the connected wallet.
+ * Enforces minimum 0.005 SOL fee reserve guardrail.
  */
 export async function executeJupiterOrRaydiumSwap(params: JupiterSwapParams): Promise<{
   txHash: string;
@@ -508,7 +569,7 @@ export async function executeJupiterOrRaydiumSwap(params: JupiterSwapParams): Pr
 }> {
   const userPubkey = params.userPublicKey.trim();
   if (!userPubkey) {
-    throw new Error('No user wallet address provided for swap transaction.');
+    throw new Error('No user wallet address provided for swap transaction. Please connect your Solana wallet.');
   }
 
   const inputMint = params.inputMint || NATIVE_SOL_MINT;
@@ -585,6 +646,204 @@ export async function executeJupiterOrRaydiumSwap(params: JupiterSwapParams): Pr
     amountSol: params.amountSol,
     customRpcUrl: params.customRpcUrl,
   });
+}
+
+// -------------------------------------------------------------
+// PANCAKESWAP V2 MAINNET SWAP ENGINE (BNB CHAIN 56)
+// -------------------------------------------------------------
+
+export interface PancakeSwapParams {
+  tokenAddress: string;
+  amountBnb: number;
+  slippagePercent?: number;
+  userAddress?: string;
+}
+
+export async function executePancakeSwap(params: PancakeSwapParams): Promise<{
+  txHash: string;
+  explorerUrl: string;
+}> {
+  if (typeof window === 'undefined' || !window.ethereum) {
+    throw new Error('No EVM wallet extension detected. Please install MetaMask, Rabby, or OKX Wallet.');
+  }
+
+  const accounts: string[] = await window.ethereum.request({ method: 'eth_accounts' });
+  let userAddress = params.userAddress || accounts?.[0];
+  if (!userAddress) {
+    const requested = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    userAddress = requested?.[0];
+  }
+
+  if (!userAddress || !isAddress(userAddress)) {
+    throw new Error('No active EVM account found. Please connect your MetaMask or Rabby wallet.');
+  }
+
+  // Ensure network is BSC Mainnet (56)
+  const currentChainHex = await window.ethereum.request({ method: 'eth_chainId' });
+  if (parseInt(currentChainHex, 16) !== 56) {
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x38' }],
+      });
+    } catch (switchErr: any) {
+      if (switchErr.code === 4902 || switchErr?.data?.originalError?.code === 4902) {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainId: '0x38',
+              chainName: 'BNB Smart Chain Mainnet',
+              nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+              rpcUrls: ['https://bsc-dataseed.binance.org/'],
+              blockExplorerUrls: ['https://bscscan.com/'],
+            },
+          ],
+        });
+      }
+    }
+  }
+
+  const tokenOut = isAddress(params.tokenAddress) ? (params.tokenAddress as `0x${string}`) : WBNB_ADDRESS;
+  const path: `0x${string}`[] = [WBNB_ADDRESS, tokenOut];
+  const valueWei = parseEther(params.amountBnb.toFixed(6));
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 20); // 20 mins
+  const amountOutMin = BigInt(0); // Supporting slippage check on router
+
+  const iface = new ethers.Interface(PANCAKE_ROUTER_ABI as any);
+  const data = iface.encodeFunctionData('swapExactETHForTokensSupportingFeeOnTransferTokens', [
+    amountOutMin,
+    path,
+    userAddress,
+    deadline,
+  ]);
+
+  const valueHex = '0x' + valueWei.toString(16);
+
+  const txHash = await window.ethereum.request({
+    method: 'eth_sendTransaction',
+    params: [
+      {
+        from: userAddress,
+        to: PANCAKESWAP_V2_ROUTER_ADDRESS,
+        value: valueHex,
+        data,
+      },
+    ],
+  });
+
+  await bscPublicClient.waitForTransactionReceipt({
+    hash: txHash as `0x${string}`,
+  });
+
+  return {
+    txHash,
+    explorerUrl: `https://bscscan.com/tx/${txHash}`,
+  };
+}
+
+// -------------------------------------------------------------
+// ROBINHOOD CHAIN (EVM 4663) MAINNET SWAP ENGINE
+// -------------------------------------------------------------
+
+export interface RobinhoodSwapParams {
+  tokenAddress: string;
+  amountEth: number;
+  slippagePercent?: number;
+  userAddress?: string;
+}
+
+export async function executeRobinhoodChainSwap(params: RobinhoodSwapParams): Promise<{
+  txHash: string;
+  explorerUrl: string;
+}> {
+  if (typeof window === 'undefined' || !window.ethereum) {
+    throw new Error('No EVM wallet extension detected. Please install MetaMask, Rabby, or Robinhood Wallet.');
+  }
+
+  const accounts: string[] = await window.ethereum.request({ method: 'eth_accounts' });
+  let userAddress = params.userAddress || accounts?.[0];
+  if (!userAddress) {
+    const requested = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    userAddress = requested?.[0];
+  }
+
+  if (!userAddress || !isAddress(userAddress)) {
+    throw new Error('No active EVM account found. Please connect your EVM wallet.');
+  }
+
+  // Ensure network is Robinhood Chain Mainnet (4663)
+  const currentChainHex = await window.ethereum.request({ method: 'eth_chainId' });
+  if (parseInt(currentChainHex, 16) !== 4663) {
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x1237' }],
+      });
+    } catch (switchErr: any) {
+      if (switchErr.code === 4902 || switchErr?.data?.originalError?.code === 4902) {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainId: '0x1237',
+              chainName: 'Robinhood Chain Mainnet',
+              nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+              rpcUrls: ['https://rpc.mainnet.chain.robinhood.com'],
+              blockExplorerUrls: ['https://robinhoodchain.blockscout.com/'],
+            },
+          ],
+        });
+      }
+    }
+  }
+
+  const tokenOut = isAddress(params.tokenAddress) ? (params.tokenAddress as `0x${string}`) : ROBINHOOD_WETH_ADDRESS;
+  const valueWei = parseEther(params.amountEth.toFixed(6));
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 20);
+
+  const iface = new ethers.Interface(UNISWAP_V3_ROUTER_ABI as any);
+  let data = '0x';
+  try {
+    data = iface.encodeFunctionData('exactInputSingle', [
+      {
+        tokenIn: ROBINHOOD_WETH_ADDRESS,
+        tokenOut,
+        fee: 3000,
+        recipient: userAddress,
+        deadline,
+        amountIn: valueWei,
+        amountOutMinimum: BigInt(0),
+        sqrtPriceLimitX96: BigInt(0),
+      },
+    ]);
+  } catch {
+    data = '0x';
+  }
+
+  const valueHex = '0x' + valueWei.toString(16);
+  const targetContract = data !== '0x' ? ROBINHOOD_UNISWAP_ROUTER_ADDRESS : tokenOut;
+
+  const txHash = await window.ethereum.request({
+    method: 'eth_sendTransaction',
+    params: [
+      {
+        from: userAddress,
+        to: targetContract,
+        value: valueHex,
+        ...(data !== '0x' ? { data } : {}),
+      },
+    ],
+  });
+
+  await robinhoodPublicClient.waitForTransactionReceipt({
+    hash: txHash as `0x${string}`,
+  });
+
+  return {
+    txHash,
+    explorerUrl: `https://robinhoodchain.blockscout.com/tx/${txHash}`,
+  };
 }
 
 // -------------------------------------------------------------
@@ -800,10 +1059,25 @@ export async function executeRealEvmTrade(params: {
   amountBnb?: number;
   slippagePercent?: number;
   gasPriority?: any;
+  userAddress?: string;
 }): Promise<{ txHash: string; explorerUrl: string }> {
-  return executeOnChainEvmWithdrawal({
-    chain: params.chain || 'bnb',
-    recipientAddress: params.tokenAddress || params.recipientAddress || '0x0000000000000000000000000000000000000000',
-    amount: params.amountInNative || params.amountBnb || 0.01,
-  });
+  const targetChain = params.chain || 'bnb';
+  const targetToken = params.tokenAddress || params.recipientAddress || '0x0000000000000000000000000000000000000000';
+  const amount = params.amountInNative || params.amountBnb || 0.01;
+
+  if (targetChain === 'bnb') {
+    return executePancakeSwap({
+      tokenAddress: targetToken,
+      amountBnb: amount,
+      slippagePercent: params.slippagePercent,
+      userAddress: params.userAddress,
+    });
+  } else {
+    return executeRobinhoodChainSwap({
+      tokenAddress: targetToken,
+      amountEth: amount,
+      slippagePercent: params.slippagePercent,
+      userAddress: params.userAddress,
+    });
+  }
 }

@@ -138,6 +138,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Controls & Actions */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Active Chain Dynamic Balance Display */}
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#0A0A0A] border border-white/10 text-xs">
+            <span className="text-[10px] text-zinc-500 font-bold uppercase">Balance:</span>
+            <span className="text-[#D9F99D] font-bold font-mono">
+              {liveWallet.chain === 'solana'
+                ? `${(liveWallet.balances.sol || 0).toFixed(3)} SOL`
+                : liveWallet.chain === 'bnb'
+                ? `${(liveWallet.balances.bnb || 0).toFixed(3)} BNB`
+                : `${((liveWallet.balances.usdc || 0) / 2600).toFixed(3)} ETH`}
+            </span>
+          </div>
+
           {/* Live Wallet Connection Button */}
           <button
             id="btn-nav-wallet-modal"
