@@ -4,27 +4,54 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
-      // Defensively patch global fetch to ensure it is writable and avoid "Cannot set property fetch of #<Window> which has only a getter"
       (function() {
         try {
-          const originalFetch = window.fetch ? window.fetch.bind(window) : null;
-          let currentFetch = originalFetch;
-          const protoDesc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(window) || {}, 'fetch') ||
-                            Object.getOwnPropertyDescriptor(window, 'fetch');
-          if (protoDesc && protoDesc.get && !protoDesc.set) {
-            Object.defineProperty(window, 'fetch', {
-              get() {
-                return currentFetch || (originalFetch ? originalFetch : undefined);
-              },
-              set(val) {
-                currentFetch = val;
-              },
-              configurable: true,
-              enumerable: true,
-            });
+          var origFetch = window.fetch ? window.fetch.bind(window) : null;
+          var customFetch = origFetch;
+
+          // Provide getter and setter on prototype chain to prevent TypeError on `window.fetch = ...`
+          var proto = window;
+          while (proto) {
+            try {
+              var desc = Object.getOwnPropertyDescriptor(proto, 'fetch');
+              if (desc && (!desc.set || !desc.writable)) {
+                Object.defineProperty(proto, 'fetch', {
+                  get: function() { return customFetch || origFetch; },
+                  set: function(v) { customFetch = v; },
+                  configurable: true,
+                  enumerable: true
+                });
+              }
+            } catch (err) {}
+            proto = Object.getPrototypeOf(proto);
           }
+
+          // Safe global object polyfill for node libraries (cross-fetch, formdata-polyfill, trezor, etc.)
+          var globalTarget = typeof globalThis !== 'undefined' ? globalThis : window;
+          var globalProxy = new Proxy(globalTarget, {
+            set: function(target, prop, value) {
+              if (prop === 'fetch') {
+                customFetch = value;
+                return true;
+              }
+              try {
+                target[prop] = value;
+              } catch (e) {
+                // Ignore read-only window property errors
+              }
+              return true;
+            },
+            get: function(target, prop) {
+              if (prop === 'global') return globalProxy;
+              if (prop === 'fetch') return customFetch || origFetch;
+              var val = target[prop];
+              return typeof val === 'function' ? val.bind(target) : val;
+            }
+          });
+
+          window.global = globalProxy;
         } catch (e) {
-          // silently handle if window is sealed or sandboxed
+          // silently handle sandboxed environments
         }
       })();
     </script>

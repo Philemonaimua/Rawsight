@@ -1,13 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   ShieldAlert, 
   Wallet, 
   Layers, 
   AlertTriangle,
   Flame,
-  ArrowUpRight
+  ArrowUpRight,
+  Key
 } from 'lucide-react';
 import { VaultState, VaultConfig } from '../types';
+import { KeyViewer } from './KeyViewer';
 
 interface VaultOverviewProps {
   vaultState: VaultState;
@@ -28,6 +30,8 @@ export const VaultOverview: React.FC<VaultOverviewProps> = ({
   onOpenStrategy,
   activePositionsCount,
 }) => {
+  const [showKeyViewer, setShowKeyViewer] = useState(false);
+
   const winRate = vaultState.totalTrades > 0 
     ? Math.round((vaultState.winningTrades / vaultState.totalTrades) * 100) 
     : 100;
@@ -38,9 +42,9 @@ export const VaultOverview: React.FC<VaultOverviewProps> = ({
     : 0;
 
   return (
-    <section className="w-full mb-6 font-mono">
+    <section className="w-full mb-6 font-mono space-y-4">
       {/* Bento Grid Header & Controls Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-3 border-b border-[#D9F99D]/20">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-[#D9F99D]/20">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="w-2 h-2 rounded-full bg-[#D9F99D] animate-pulse" />
@@ -59,6 +63,19 @@ export const VaultOverview: React.FC<VaultOverviewProps> = ({
 
         {/* Quick Actions */}
         <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            id="btn-overview-keys"
+            onClick={() => setShowKeyViewer(!showKeyViewer)}
+            className={`flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-md text-xs font-bold uppercase tracking-wider border transition-all cursor-pointer ${
+              showKeyViewer
+                ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                : 'bg-[#0A0A0A] border-white/10 text-zinc-400 hover:text-white hover:border-amber-400/40'
+            }`}
+          >
+            <Key className="w-4 h-4 text-amber-400" />
+            <span>{showKeyViewer ? 'Hide Vault Keys' : 'Vault Keys'}</span>
+          </button>
+
           <button
             id="btn-overview-deposit"
             onClick={onOpenDeposit}
@@ -89,6 +106,13 @@ export const VaultOverview: React.FC<VaultOverviewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Embedded Persistent Operational Key Viewer (when toggled) */}
+      {showKeyViewer && (
+        <div className="animate-in fade-in duration-200">
+          <KeyViewer />
+        </div>
+      )}
 
       {/* Main Bento Grid Layout */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4">

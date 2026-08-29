@@ -1,0 +1,48 @@
+{
+  "mainnet": {
+    "cashBalance": 0,
+    "positions": [],
+    "logs": [],
+    "realizedPnlUsd": 0,
+    "totalTrades": 0,
+    "winningTrades": 0,
+    "losingTrades": 0,
+    "rugsShieldedCount": 0,
+    "insiderDumpsDodgedCount": 0
+  },
+  "sandbox": {
+    "cashBalance": 5000,
+    "positions": [],
+    "logs": [],
+    "realizedPnlUsd": 0,
+    "totalTrades": 0,
+    "winningTrades": 0,
+    "losingTrades": 0,
+    "rugsShieldedCount": 0,
+    "insiderDumpsDodgedCount": 0
+  },
+  "liveStream": [],
+  "listenerStatus": [
+    {
+      "chain": "solana",
+      "name": "Pump.fun & Raydium Stream",
+      "status": "LISTENING",
+      "eventsProcessed": 1360,
+      "lastPingTime": 1788042208020
+    },
+    {
+      "chain": "bnb",
+      "name": "Four.meme & PancakeSwap AMM",
+      "status": "LISTENING",
+      "eventsProcessed": 1101,
+      "lastPingTime": 1788042208020
+    },
+    {
+      "chain": "robinhood",
+      "name": "Robinhood DEX & Uniswap V3",
+      "status": "LISTENING",
+      "eventsProcessed": 736,
+      "lastPingTime": 1788042208020
+    }
+  ]
+}

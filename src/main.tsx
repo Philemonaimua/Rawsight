@@ -3,12 +3,28 @@ import { createRoot } from 'react-dom/client';
 import { Buffer } from 'buffer';
 import App from './App.tsx';
 import './index.css';
-import { MultiChainWalletProvider } from './components/WalletProviders.tsx';
+import { UnifiedWalletProvider } from './providers/WalletProvider.tsx';
 
 // 1. Node Buffer Polyfill & Global Availability for Solana Web3 & EVM Transactions
 if (typeof window !== 'undefined') {
-  (window as any).Buffer = Buffer;
-  (window as any).global = window;
+  (window as any).Buffer = (window as any).Buffer || Buffer;
+  if (!(window as any).global) {
+    (window as any).global = new Proxy(window, {
+      set(target, prop, value) {
+        try {
+          (target as any)[prop] = value;
+        } catch {
+          // Ignore read-only browser property assignments like fetch
+        }
+        return true;
+      },
+      get(target, prop) {
+        if (prop === 'global') return (window as any).global;
+        const val = (target as any)[prop];
+        return typeof val === 'function' ? val.bind(target) : val;
+      }
+    });
+  }
   if (!(window as any).process) {
     (window as any).process = { env: {} };
   }
@@ -59,9 +75,9 @@ if (typeof window !== 'undefined') {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <MultiChainWalletProvider>
+    <UnifiedWalletProvider>
       <App />
-    </MultiChainWalletProvider>
+    </UnifiedWalletProvider>
   </StrictMode>,
 );
 
