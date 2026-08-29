@@ -196,14 +196,6 @@ export function getPersistedActiveSolanaWallet(): string {
     if (directStored && directStored.trim()) {
       return directStored.trim();
     }
-
-    const raw = localStorage.getItem(EXCLUSIVE_WALLET_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed.solanaAddress && typeof parsed.solanaAddress === 'string') {
-        return parsed.solanaAddress.trim();
-      }
-    }
   } catch (e) {
     console.warn('Wallet persistence read warning:', e);
   }
@@ -212,10 +204,16 @@ export function getPersistedActiveSolanaWallet(): string {
 }
 
 /**
- * Store the active Solana public key permanently so reload never resets it.
+ * Store the active Solana public key when user connects.
  */
 export function setPersistedActiveSolanaWallet(address: string): void {
-  if (!address || !address.trim()) return;
+  if (!address || !address.trim()) {
+    try {
+      localStorage.removeItem(ACTIVE_SOLANA_KEY);
+      localStorage.removeItem(EXCLUSIVE_WALLET_KEY);
+    } catch {}
+    return;
+  }
   const cleanAddr = address.trim();
 
   try {
@@ -230,6 +228,13 @@ export function setPersistedActiveSolanaWallet(address: string): void {
   } catch (e) {
     console.warn('Wallet persistence save warning:', e);
   }
+}
+
+export function clearPersistedActiveSolanaWallet(): void {
+  try {
+    localStorage.removeItem(ACTIVE_SOLANA_KEY);
+    localStorage.removeItem(EXCLUSIVE_WALLET_KEY);
+  } catch {}
 }
 
 export function getExclusiveBoundWallet(): { solanaAddress: string; evmAddress?: string } | null {

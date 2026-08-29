@@ -153,18 +153,15 @@ const INITIAL_CONFIG: VaultConfig = {
   audioAlerts: true,
 };
 
-const defaultVaultKeys = getOrCreateAutonomousVaultKeys();
-const initialBoundSolana = getPersistedActiveSolanaWallet() || defaultVaultKeys.solanaAddress;
-
 const INITIAL_WALLET_STATE: LiveWalletState = {
-  isConnected: Boolean(initialBoundSolana),
-  walletProvider: initialBoundSolana ? 'Persisted Solana Wallet' : null,
-  address: initialBoundSolana,
+  isConnected: false,
+  walletProvider: null,
+  address: '',
   chain: 'solana',
   vaultAddresses: {
-    solana: initialBoundSolana,
-    bnb: defaultVaultKeys.evmAddress,
-    robinhood: defaultVaultKeys.evmAddress,
+    solana: '',
+    bnb: '',
+    robinhood: '',
   },
   balances: {
     sol: 0.0,
@@ -185,7 +182,7 @@ const INITIAL_LOGS: TradeLog[] = [
     tokenName: 'Rawsight Scrutiny Engine',
     chain: 'solana',
     amountUsd: 0,
-    note: 'Private single-user trading terminal armed with Solflare, Phantom, and low-latency DEX RPC routing.',
+    note: 'Trading terminal ready. Connect Phantom, Solflare, or MetaMask to trade live on Mainnet.',
     txHash: '0xgenesis...mainnet',
   },
 ];
@@ -263,25 +260,22 @@ export default function App() {
     { time: '00:00', totalValue: 0, pnl: 0 },
   ]);
 
-  // Determine Active Solana Address (Prioritize connected adapter > persisted wallet > env target)
-  const activeSolanaAddress = (solConnected && publicKey ? publicKey.toBase58() : '') ||
-    getPersistedActiveSolanaWallet() ||
-    getTargetWalletFromEnv() ||
-    defaultVaultKeys.solanaAddress;
-
-  // Active address for general chain context
-  const activeAddress = solConnected && publicKey 
+  // Determine Active Wallet Addresses from real connected extensions
+  const activeSolanaAddress = solConnected && publicKey 
     ? publicKey.toBase58() 
-    : (evmConnected && evmAddress ? evmAddress : activeSolanaAddress);
+    : (liveWallet.isConnected && liveWallet.chain === 'solana' ? liveWallet.address : '');
 
-  // 1. SOLFLARE / PHANTOM WALLET ADAPTER & PERSISTENCE SYNCHRONIZATION
+  const activeEvmAddress = evmConnected && evmAddress 
+    ? evmAddress 
+    : (liveWallet.isConnected && liveWallet.chain !== 'solana' ? liveWallet.address : '');
+
+  const activeAddress = activeSolanaAddress || activeEvmAddress || '';
+
+  // 1. SOLFLARE / PHANTOM / METAMASK WALLET ADAPTER SYNCHRONIZATION
   useEffect(() => {
     if (solConnected && publicKey) {
       const pubKeyStr = publicKey.toBase58();
-      const providerName = (solWallet?.adapter.name as any) || 'Solflare';
-
-      // Permanently persist connected public key to localStorage
-      setPersistedActiveSolanaWallet(pubKeyStr);
+      const providerName = (solWallet?.adapter.name as any) || 'Solana Wallet';
 
       setLiveWallet(prev => ({
         ...prev,
@@ -291,8 +285,8 @@ export default function App() {
         chain: 'solana',
         vaultAddresses: {
           solana: pubKeyStr,
-          bnb: defaultVaultKeys.evmAddress,
-          robinhood: defaultVaultKeys.evmAddress,
+          bnb: '',
+          robinhood: '',
         },
         activeNetwork: 'Solana Mainnet-Beta',
         rpcLatencyMs: 14,
@@ -305,27 +299,23 @@ export default function App() {
         address: evmAddress,
         chain: 'bnb',
         vaultAddresses: {
-          solana: activeSolanaAddress,
+          solana: '',
           bnb: evmAddress,
           robinhood: evmAddress,
         },
         activeNetwork: 'BNB Smart Chain (56)',
         rpcLatencyMs: 20,
       }));
-    } else if (activeSolanaAddress) {
-      setLiveWallet(prev => ({
-        ...prev,
-        isConnected: true,
-        walletProvider: prev.walletProvider || 'Persisted Solana Wallet',
-        address: activeSolanaAddress,
-        chain: 'solana',
-        vaultAddresses: {
-          ...prev.vaultAddresses,
-          solana: activeSolanaAddress,
-        },
-      }));
     }
-  }, [solConnected, publicKey, solWallet, evmConnected, evmAddress, activeSolanaAddress]);
+  }, [solConnected, publicKey, solWallet, evmConnected, evmAddress]);
+
+  // Disconnect handler
+  const handleDisconnectWallet = useCallback(() => {
+    try {
+      if (solConnected) disconnectSol();
+    } catch {}
+    setLiveWallet(INITIAL_WALLET_STATE);
+  }, [solConnected, disconnectSol]);
 
   // 2. AGGRESSIVE 5-SECOND POLLING LOOP & WEBSOCKET ACCOUNT CHANGE LISTENER
   useEffect(() => {
@@ -384,11 +374,11 @@ export default function App() {
 
   // 3. EXCLUSIVE PORTFOLIO & POSITION PERSISTENCE PER ENVIRONMENT & WALLET
   useEffect(() => {
-    const addrKey = activeAddress || defaultVaultKeys.solanaAddress;
+    const addrKey = activeAddress || 'default-session';
     
-    // Save exclusive bound wallet keypair
+    // Save bound wallet keypair if active
     if (activeAddress) {
-      saveExclusiveBoundWallet(activeAddress, defaultVaultKeys.evmAddress);
+      saveExclusiveBoundWallet(activeAddress);
     }
 
     async function hydrate() {
@@ -424,7 +414,7 @@ export default function App() {
 
   // Dual-Layer Save (IndexedDB + LocalStorage + Backend Sync)
   useEffect(() => {
-    const addrKey = activeAddress || defaultVaultKeys.solanaAddress;
+    const addrKey = activeAddress || 'default-session';
     saveVaultState(config.tradingMode, addrKey, {
       cashBalance,
       positions,
@@ -1136,6 +1126,7 @@ export default function App() {
           vaultConfig={config}
           onUpdateConfig={(newConfig) => setConfig(newConfig)}
           onDepositFromLiveWallet={(amountUsd, chain) => handleConfirmDeposit(amountUsd, chain)}
+          onDisconnectWallet={handleDisconnectWallet}
         />
 
         {/* Snipe Execution Customization Modal */}

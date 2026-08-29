@@ -174,7 +174,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </span>
             ) : (
-              <span className="text-[11px] sm:text-xs">Connect</span>
+              <span className="text-[11px] sm:text-xs">Connect Wallet</span>
             )}
           </button>
 

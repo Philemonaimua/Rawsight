@@ -238,10 +238,10 @@ export const TradingControlPanel: React.FC<TradingControlPanelProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-black text-white uppercase tracking-wider">
-                VAULT TREASURY & ON-CHAIN BALANCES
+                CONNECTED WALLET & BALANCES
               </h3>
               <p className="text-[10px] text-zinc-400">
-                Self-Custodial Autonomous Capital Pool
+                Live Multi-Chain Trading Liquidity
               </p>
             </div>
           </div>
@@ -250,7 +250,7 @@ export const TradingControlPanel: React.FC<TradingControlPanelProps> = ({
             onClick={onOpenWallet}
             className="text-[11px] font-bold text-[#D9F99D] hover:underline cursor-pointer min-h-[44px] flex items-center"
           >
-            Manage Keys
+            {liveWallet.isConnected ? 'Wallet Settings' : 'Connect Wallet'}
           </button>
         </div>
 

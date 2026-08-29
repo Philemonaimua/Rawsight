@@ -47,27 +47,32 @@ export const DepositModal: React.FC<DepositModalProps> = ({
 
   if (!isOpen) return null;
 
-  const vaultKeys = getOrCreateAutonomousVaultKeys();
-  const targetAddress = selectedChain === 'solana' 
-    ? vaultKeys.solanaAddress 
-    : vaultKeys.evmAddress;
+  const isConnected = Boolean(walletState?.isConnected && walletState?.address);
+  const targetAddress = isConnected 
+    ? (walletState?.address || '') 
+    : (selectedChain === 'solana' ? 'No Solana wallet connected' : 'No EVM wallet connected');
 
   const handleCopyAddress = () => {
-    navigator.clipboard.writeText(targetAddress);
+    if (!isConnected || !walletState?.address) return;
+    navigator.clipboard.writeText(walletState.address);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleCheckOnChainSync = async () => {
+    if (!walletState?.address) return;
     setIsCheckingOnChain(true);
     setSyncMessage(null);
     try {
-      const res = await fetchLiveVaultBalances(vaultKeys.solanaAddress, vaultKeys.evmAddress);
+      const res = await fetchLiveVaultBalances(
+        selectedChain === 'solana' ? walletState.address : '',
+        selectedChain !== 'solana' ? walletState.address : ''
+      );
       if (onSyncLiveBalances) {
         onSyncLiveBalances();
       }
-      setSyncMessage(`Live on-chain check completed: ${res.sol.toFixed(3)} SOL • ${res.bnb.toFixed(3)} BNB in self-custody vault.`);
-    } catch (e: any) {
+      setSyncMessage(`Live on-chain check completed: ${res.sol.toFixed(3)} SOL • ${res.bnb.toFixed(3)} BNB.`);
+    } catch {
       setSyncMessage('RPC check completed. If you recently transferred funds, allow 15-30s for validator confirmations.');
     } finally {
       setIsCheckingOnChain(false);
