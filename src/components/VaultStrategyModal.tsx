@@ -162,12 +162,8 @@ export const VaultStrategyModal: React.FC<VaultStrategyModalProps> = ({
                 <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
                   Autonomous Strategy & Position Sizing Engine
                 </h2>
-                <span className={`px-2 py-0.5 rounded-sm text-[9px] font-bold uppercase tracking-widest ${
-                  formData.tradingMode === 'LIVE_MAINNET'
-                    ? 'bg-red-500/10 text-red-300 border border-red-500/30'
-                    : 'bg-[#D9F99D]/10 text-[#D9F99D] border border-[#D9F99D]/30'
-                }`}>
-                  {formData.tradingMode === 'LIVE_MAINNET' ? 'LIVE MAINNET' : 'SIMULATION'}
+                <span className="px-2 py-0.5 rounded-sm text-[9px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  PRODUCTION MAINNET
                 </span>
               </div>
               <p className="text-xs text-zinc-400">
@@ -492,40 +488,48 @@ export const VaultStrategyModal: React.FC<VaultStrategyModalProps> = ({
           {/* TAB 2: LIVE MEV & EXECUTION */}
           {activeTab === 'execution' && (
             <div className="space-y-4">
-              {/* Trading Mode Toggle */}
-              <div className="p-3.5 rounded-lg bg-[#050505] border border-white/10 space-y-2">
-                <label className="block text-[10px] uppercase tracking-widest text-zinc-400">
-                  TRADING ENGINE EXECUTION MODE
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, tradingMode: 'SIMULATION_SANDBOX' })}
-                    className={`p-3 rounded-sm border text-left transition-all ${
-                      formData.tradingMode === 'SIMULATION_SANDBOX'
-                        ? 'border-[#D9F99D] bg-[#D9F99D]/15 text-[#D9F99D] font-bold'
-                        : 'border-white/10 bg-[#0A0A0A] text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <div className="text-xs font-bold uppercase">Simulation Sandbox</div>
-                    <div className="text-[10px] text-zinc-500 mt-0.5">Rapid backtesting with mock capital</div>
-                  </button>
+              {/* Production Mainnet Status Banner */}
+              <div className="p-3.5 rounded-lg bg-emerald-950/30 border border-emerald-500/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-xs font-black text-emerald-300 uppercase tracking-wider">
+                      PRODUCTION MAINNET ENGINE ARMED
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    REAL ON-CHAIN SWAPS
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-300 leading-relaxed">
+                  Trades are executed with zero simulation delay using Jupiter DEX on Solana, PancakeSwap on BSC, and Uniswap on Robinhood Chain.
+                </p>
+              </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, tradingMode: 'LIVE_MAINNET' })}
-                    className={`p-3 rounded-sm border text-left transition-all ${
-                      formData.tradingMode === 'LIVE_MAINNET'
-                        ? 'border-red-400 bg-red-950/40 text-red-300 font-bold'
-                        : 'border-white/10 bg-[#0A0A0A] text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <div className="text-xs font-bold uppercase flex items-center gap-1.5 text-red-400">
-                      <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                      Live Mainnet Trading
-                    </div>
-                    <div className="text-[10px] text-zinc-500 mt-0.5">Direct RPC execution & real liquidity pools</div>
-                  </button>
+              {/* Chain Isolation Rule Explanation */}
+              <div className="p-3.5 rounded-lg bg-[#050505] border border-white/10 space-y-2.5">
+                <label className="block text-[10px] uppercase tracking-widest text-[#D9F99D] font-bold">
+                  CHAIN-ISOLATED EXECUTION RULES
+                </label>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex items-start gap-2 p-2 rounded bg-zinc-950 border border-white/5">
+                    <span className="text-[#D9F99D] font-bold shrink-0">SOL:</span>
+                    <span className="text-zinc-300 text-[11px]">
+                      When a Solana token is detected, buys and sells execute <strong>only</strong> on Solana with SOL via connected Solana wallet (Jupiter/Raydium).
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2 p-2 rounded bg-zinc-950 border border-white/5">
+                    <span className="text-amber-400 font-bold shrink-0">BNB:</span>
+                    <span className="text-zinc-300 text-[11px]">
+                      When a BNB token is detected, buys and sells execute <strong>only</strong> on BNB Chain with BNB via connected EVM wallet (PancakeSwap).
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2 p-2 rounded bg-zinc-950 border border-white/5">
+                    <span className="text-cyan-400 font-bold shrink-0">RH:</span>
+                    <span className="text-zinc-300 text-[11px]">
+                      When a Robinhood token is detected, buys and sells execute <strong>only</strong> on Robinhood Chain with ETH via connected EVM wallet (Uniswap).
+                    </span>
+                  </div>
                 </div>
               </div>
 

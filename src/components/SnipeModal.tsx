@@ -130,8 +130,8 @@ export const SnipeModal: React.FC<SnipeModalProps> = ({
                 <h2 className="text-base sm:text-lg font-black text-white tracking-tight">
                   INSTANT MEMECOIN SNIPER ROUTER
                 </h2>
-                <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-[#D9F99D]/15 text-[#D9F99D] border border-[#D9F99D]/30">
-                  {vaultConfig.tradingMode === 'LIVE_MAINNET' ? 'LIVE MAINNET' : 'SIMULATION'}
+                <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  PRODUCTION MAINNET
                 </span>
               </div>
               <p className="text-xs text-zinc-400">

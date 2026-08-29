@@ -85,8 +85,10 @@ export const DepositModal: React.FC<DepositModalProps> = ({
   };
 
   const handlePercentOfWallet = (pct: number) => {
-    const total = walletState?.balances?.totalUsd || 500;
-    const calculated = Math.max(1, Math.round((total * pct) / 100));
+    const total = walletState?.balances?.totalUsd || 0;
+    const calculated = total > 0 
+      ? Math.max(1, Math.round((total * pct) / 100))
+      : Math.max(1, Math.round((250 * pct) / 100));
     setAmount(calculated);
     setCustomAmountStr(calculated.toString());
   };

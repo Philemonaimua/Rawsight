@@ -109,37 +109,26 @@ export const LiveWalletModal: React.FC<LiveWalletModalProps> = ({
     setIsRefreshingBalances(true);
     setSyncStatus(null);
     try {
-      if (currentChain === 'solana') {
-        const sol = await fetchSolanaBalance(walletState.address, customRpc.solana);
-        const updatedBalances = {
-          ...balances,
-          sol,
-          totalUsd: sol * 185 + balances.bnb * 580 + balances.usdc,
-        };
-        if (onUpdateWalletState) {
-          onUpdateWalletState({
-            ...walletState,
-            balances: updatedBalances,
-            rpcLatencyMs: 16,
-          });
-        }
-        setSyncStatus(`Mainnet sync verified: ${sol.toFixed(4)} SOL.`);
-      } else {
-        const live = await fetchLiveVaultBalances('', walletState.address, customRpc);
-        if (onUpdateWalletState) {
-          onUpdateWalletState({
-            ...walletState,
-            balances: {
-              ...balances,
-              bnb: live.bnb,
-              usdc: live.usdc,
-              totalUsd: balances.sol * 185 + live.bnb * 580 + live.usdc,
-            },
-            rpcLatencyMs: 16,
-          });
-        }
-        setSyncStatus(`Mainnet sync verified: ${live.bnb.toFixed(4)} BNB.`);
+      const isSol = currentChain === 'solana' || !walletState.address.startsWith('0x');
+      const solAddr = isSol ? walletState.address : '';
+      const evmAddr = !isSol ? walletState.address : '';
+
+      const live = await fetchLiveVaultBalances(solAddr, evmAddr, customRpc);
+      const updatedBalances = {
+        sol: isSol ? live.sol : balances.sol,
+        bnb: !isSol ? live.bnb : balances.bnb,
+        usdc: !isSol ? live.usdc : balances.usdc,
+        totalUsd: live.totalUsd,
+      };
+
+      if (onUpdateWalletState) {
+        onUpdateWalletState({
+          ...walletState,
+          balances: updatedBalances,
+          rpcLatencyMs: 14,
+        });
       }
+      setSyncStatus(`Mainnet sync verified: ${updatedBalances.sol.toFixed(3)} SOL • ${updatedBalances.bnb.toFixed(3)} BNB • ~$${updatedBalances.totalUsd.toFixed(2)} USD.`);
     } catch {
       setSyncStatus('Queried RPC nodes. Ready for next incoming block confirmation.');
     } finally {

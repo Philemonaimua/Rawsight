@@ -162,8 +162,17 @@ export function getOrCreateAutonomousVaultKeys(): AutonomousVaultKeys {
   return keys;
 }
 
+// High-reliability Solana Mainnet RPC candidates list
+const SOLANA_FALLBACK_RPCS = [
+  'https://api.mainnet-beta.solana.com',
+  'https://solana-mainnet.rpc.extrnode.com',
+  'https://rpc.ankr.com/solana',
+  'https://mainnet.helius-rpc.com/?api-key=public',
+];
+
 /**
  * Query real on-chain balance from live Solana RPC with accurate lamports conversion.
+ * Iterates through high-performance fallbacks if primary cluster is rate limited.
  * (balanceInSol = lamports / 1e9)
  */
 export async function fetchSolanaBalance(
@@ -171,16 +180,27 @@ export async function fetchSolanaBalance(
   customRpcUrl?: string
 ): Promise<number> {
   if (!solAddress || !solAddress.trim()) return 0;
-  try {
-    const connection = getSolanaConnection(customRpcUrl);
-    const pubKey = new PublicKey(solAddress.trim());
-    const lamports = await connection.getBalance(pubKey, 'confirmed');
-    // Exact lamports conversion (1 SOL = 1e9 lamports)
-    return lamports / 1e9;
-  } catch (err) {
-    console.warn('Solana RPC balance query notice:', err);
-    return 0;
+  
+  const rpcList = customRpcUrl && customRpcUrl.trim().startsWith('http')
+    ? [customRpcUrl.trim(), ...SOLANA_FALLBACK_RPCS]
+    : SOLANA_FALLBACK_RPCS;
+
+  const pubKey = new PublicKey(solAddress.trim());
+
+  for (const rpc of rpcList) {
+    try {
+      const conn = new Connection(rpc, { commitment: 'confirmed' });
+      const lamports = await conn.getBalance(pubKey, 'confirmed');
+      if (typeof lamports === 'number') {
+        return lamports / 1e9;
+      }
+    } catch (err) {
+      // Continue to next fallback RPC endpoint
+      continue;
+    }
   }
+
+  return 0;
 }
 
 /**

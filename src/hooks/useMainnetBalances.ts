@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import { formatEther } from 'viem';
+import { createPublicClient, http, formatEther, isAddress } from 'viem';
 import { 
   bscPublicClient, 
   robinhoodPublicClient, 
@@ -9,6 +9,8 @@ import {
   BSC_MAINNET_CONFIG,
   ROBINHOOD_CHAIN_CONFIG
 } from '../lib/networks';
+import { bscChain, robinhoodChain } from '../lib/wagmiConfig';
+import { fetchSolanaBalance } from '../lib/web3Service';
 
 export interface ChainBalances {
   sol: number;
@@ -34,7 +36,9 @@ export function useMainnetBalances({
   solanaAddress,
   evmAddress,
   solanaRpcUrl = SOLANA_MAINNET_CONFIG.primaryRpc,
-  pollIntervalMs = 12000,
+  bnbRpcUrl,
+  robinhoodRpcUrl,
+  pollIntervalMs = 6000,
 }: UseMainnetBalancesParams = {}) {
   const [balances, setBalances] = useState<ChainBalances>({
     sol: 0,
@@ -73,45 +77,48 @@ export function useMainnetBalances({
     let bnbBal = 0;
     let ethBal = 0;
 
-    // 1. SOLANA MAINNET BALANCE FETCH
+    // 1. SOLANA MAINNET BALANCE FETCH (with automatic fallback RPC rotation)
     if (solanaAddress && solanaAddress.trim().length >= 32) {
       try {
-        const conn = getSolanaConnection(solanaRpcUrl);
-        const pubkey = new PublicKey(solanaAddress);
-        const lamports = await conn.getBalance(pubkey);
-        solBal = lamports / LAMPORTS_PER_SOL;
+        solBal = await fetchSolanaBalance(solanaAddress.trim(), solanaRpcUrl);
       } catch (err: any) {
-        console.warn('Solana balance query note:', err?.message || err);
+        console.warn('Solana balance query notice:', err?.message || err);
       }
     }
 
     // 2. BNB SMART CHAIN (56) BALANCE FETCH
-    if (evmAddress && evmAddress.startsWith('0x') && evmAddress.length === 42) {
+    if (evmAddress && isAddress(evmAddress)) {
       try {
-        const bnbWei = await bscPublicClient.getBalance({
+        const client = bnbRpcUrl && bnbRpcUrl.trim().startsWith('http')
+          ? createPublicClient({ chain: bscChain, transport: http(bnbRpcUrl.trim()) })
+          : bscPublicClient;
+        const bnbWei = await client.getBalance({
           address: evmAddress as `0x${string}`,
         });
         bnbBal = parseFloat(formatEther(bnbWei));
       } catch (err: any) {
-        console.warn('BNB balance query note:', err?.message || err);
+        console.warn('BNB balance query notice:', err?.message || err);
       }
     }
 
     // 3. ROBINHOOD CHAIN (4663) ETH BALANCE FETCH
-    if (evmAddress && evmAddress.startsWith('0x') && evmAddress.length === 42) {
+    if (evmAddress && isAddress(evmAddress)) {
       try {
-        const ethWei = await robinhoodPublicClient.getBalance({
+        const client = robinhoodRpcUrl && robinhoodRpcUrl.trim().startsWith('http')
+          ? createPublicClient({ chain: robinhoodChain, transport: http(robinhoodRpcUrl.trim()) })
+          : robinhoodPublicClient;
+        const ethWei = await client.getBalance({
           address: evmAddress as `0x${string}`,
         });
         ethBal = parseFloat(formatEther(ethWei));
       } catch (err: any) {
-        console.warn('Robinhood Chain ETH balance query note:', err?.message || err);
+        console.warn('Robinhood Chain ETH balance query notice:', err?.message || err);
       }
     }
 
     if (!isMountedRef.current) return;
 
-    // Approximate USD Valuation using live market indexes (SOL ~$185, BNB ~$580, ETH ~$2600)
+    // Live Market Valuation (SOL ~$185, BNB ~$580, ETH ~$2600)
     const totalUsd = solBal * 185 + bnbBal * 580 + ethBal * 2600;
 
     setBalances({
@@ -124,16 +131,16 @@ export function useMainnetBalances({
       isLoading: false,
       error: null,
     });
-  }, [solanaAddress, evmAddress, solanaRpcUrl]);
+  }, [solanaAddress, evmAddress, solanaRpcUrl, bnbRpcUrl, robinhoodRpcUrl]);
 
-  // Lifecycle: 10-15s Polling & Solana WebSocket Account Listener
+  // Lifecycle: Polling & Solana WebSocket Account Listener
   useEffect(() => {
     isMountedRef.current = true;
 
     // Initial query
     fetchBalances();
 
-    // Regular polling interval
+    // Regular fast polling interval
     const interval = setInterval(() => {
       fetchBalances();
     }, pollIntervalMs);
@@ -143,7 +150,7 @@ export function useMainnetBalances({
     if (solanaAddress && solanaAddress.trim().length >= 32) {
       try {
         activeSolConn = getSolanaConnection(solanaRpcUrl);
-        const pubkey = new PublicKey(solanaAddress);
+        const pubkey = new PublicKey(solanaAddress.trim());
         solSubscriptionIdRef.current = activeSolConn.onAccountChange(
           pubkey,
           (accountInfo) => {

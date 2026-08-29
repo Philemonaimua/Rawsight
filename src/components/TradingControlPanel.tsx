@@ -257,11 +257,11 @@ export const TradingControlPanel: React.FC<TradingControlPanelProps> = ({
         {/* Available Liquidity Summary */}
         <div className="grid grid-cols-2 gap-2 my-3 p-3 rounded-lg bg-[#050505] border border-white/5">
           <div>
-            <span className="text-[10px] text-zinc-500 uppercase block">Available Cash</span>
+            <span className="text-[10px] text-zinc-500 uppercase block font-bold">Trading Available</span>
             <span className="text-base font-black text-white">${cashBalanceUsd.toFixed(2)}</span>
           </div>
           <div className="text-right">
-            <span className="text-[10px] text-zinc-500 uppercase block">Total Vault NAV</span>
+            <span className="text-[10px] text-zinc-500 uppercase block font-bold">Total Wallet Balances</span>
             <span className="text-base font-black text-[#D9F99D]">${totalNavUsd.toFixed(2)}</span>
           </div>
         </div>
@@ -270,34 +270,26 @@ export const TradingControlPanel: React.FC<TradingControlPanelProps> = ({
         <div className="space-y-1.5 my-3 text-xs">
           <div className="flex items-center justify-between p-2 rounded bg-zinc-950 border border-white/5">
             <span className="text-zinc-400">Solana Balance (SOL):</span>
-            <span className="text-white font-bold">{liveWallet.balances.sol.toFixed(3)} SOL</span>
+            <span className="text-[#D9F99D] font-bold font-mono">{liveWallet.balances.sol.toFixed(3)} SOL</span>
           </div>
           <div className="flex items-center justify-between p-2 rounded bg-zinc-950 border border-white/5">
-            <span className="text-zinc-400">BNB Balance (BNB):</span>
-            <span className="text-white font-bold">{liveWallet.balances.bnb.toFixed(3)} BNB</span>
+            <span className="text-zinc-400">BNB Chain Balance (BNB):</span>
+            <span className="text-amber-400 font-bold font-mono">{liveWallet.balances.bnb.toFixed(3)} BNB</span>
           </div>
           <div className="flex items-center justify-between p-2 rounded bg-zinc-950 border border-white/5">
-            <span className="text-zinc-400">USDC / USDT Stable:</span>
-            <span className="text-white font-bold">${liveWallet.balances.usdc.toFixed(2)}</span>
+            <span className="text-zinc-400">Robinhood L2 Balance (ETH):</span>
+            <span className="text-cyan-400 font-bold font-mono">{((liveWallet.balances.usdc || 0) / 2600).toFixed(3)} ETH</span>
           </div>
         </div>
 
-        {/* Deposit & Withdraw Actions */}
-        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5">
+        {/* Manage Connected Wallets Action */}
+        <div className="pt-2 border-t border-white/5">
           <button
-            onClick={onOpenDeposit}
-            className="flex items-center justify-center gap-1.5 py-2.5 min-h-[44px] rounded-lg text-xs font-bold uppercase tracking-wider bg-[#D9F99D] text-black hover:bg-[#bef264] transition-all shadow-md shadow-[#D9F99D]/10 cursor-pointer"
+            onClick={onOpenWallet}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 min-h-[44px] rounded-lg text-xs font-black uppercase tracking-wider bg-[#D9F99D] text-black hover:bg-[#bef264] transition-all shadow-md shadow-[#D9F99D]/10 cursor-pointer"
           >
-            <ArrowDownToLine className="w-4 h-4" />
-            <span>Deposit</span>
-          </button>
-
-          <button
-            onClick={onOpenWithdraw}
-            className="flex items-center justify-center gap-1.5 py-2.5 min-h-[44px] rounded-lg text-xs font-bold uppercase tracking-wider bg-[#050505] border border-white/10 text-white hover:border-[#D9F99D]/40 transition-all cursor-pointer"
-          >
-            <ArrowUpFromLine className="w-4 h-4 text-[#D9F99D]" />
-            <span>Withdraw</span>
+            <Wallet className="w-4 h-4 text-black" />
+            <span>Manage Connected Wallets & Balances</span>
           </button>
         </div>
 

@@ -72,19 +72,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="text-base sm:text-xl font-black tracking-tighter text-white">
                 RAW<span className="text-[#D9F99D]">SIGHT</span>
               </span>
-              <button
-                type="button"
-                onClick={onToggleTradingMode}
-                title="Toggle between Live On-Chain Mainnet and Simulation Sandbox (Isolated State)"
-                className={`inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-sm text-[8px] sm:text-[9px] font-bold tracking-widest uppercase cursor-pointer transition-all hover:scale-105 ${
-                  tradingMode === 'LIVE_MAINNET' 
-                    ? 'bg-red-500/20 text-red-300 border border-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.3)]' 
-                    : 'bg-[#D9F99D]/15 text-[#D9F99D] border border-[#D9F99D]/40 shadow-[0_0_8px_rgba(217,249,157,0.15)]'
-                }`}
+              <div
+                title="Production Live Mainnet Mode"
+                className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-sm text-[8px] sm:text-[9px] font-black tracking-widest uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.3)]"
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${tradingMode === 'LIVE_MAINNET' ? 'bg-red-400 animate-pulse' : 'bg-[#D9F99D]'}`} />
-                {tradingMode === 'LIVE_MAINNET' ? 'LIVE MAINNET' : 'SANDBOX'}
-              </button>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>PRODUCTION MAINNET</span>
+              </div>
             </div>
             <p className="text-[9px] sm:text-[10px] text-[#D9F99D]/60 tracking-wider hidden xs:block uppercase">
               Autonomous Multi-Chain Terminal
@@ -139,7 +133,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Controls & Actions */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Active Chain Dynamic Balance Display */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#0A0A0A] border border-white/10 text-xs">
+          <div 
+            onClick={onOpenWallet}
+            title="Click to manage multi-chain wallet balances"
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#0A0A0A] border border-white/10 text-xs hover:border-[#D9F99D]/40 transition-colors cursor-pointer"
+          >
             <span className="text-[10px] text-zinc-500 font-bold uppercase">Balance:</span>
             <span className="text-[#D9F99D] font-bold font-mono">
               {liveWallet.chain === 'solana'
@@ -148,6 +146,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                 ? `${(liveWallet.balances.bnb || 0).toFixed(3)} BNB`
                 : `${((liveWallet.balances.usdc || 0) / 2600).toFixed(3)} ETH`}
             </span>
+            {liveWallet.balances.totalUsd > 0 && (
+              <span className="text-zinc-400 text-[10px] font-mono">
+                (${liveWallet.balances.totalUsd.toFixed(2)})
+              </span>
+            )}
           </div>
 
           {/* Live Wallet Connection Button */}
