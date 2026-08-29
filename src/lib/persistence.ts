@@ -152,35 +152,94 @@ export async function loadVaultState(
 /**
  * Single Exclusive Wallet Persistence
  * Locks down wallet binding so the terminal always reconnects to the exclusive owner keypair.
+ * NEVER resets or randomizes wallet on reload.
  */
-const EXCLUSIVE_WALLET_KEY = 'rawsight_exclusive_vault_wallet_v1';
+const EXCLUSIVE_WALLET_KEY = 'rawsight_exclusive_vault_wallet_v2';
+const ACTIVE_SOLANA_KEY = 'rawsight_active_solana_wallet_address_v2';
 
-export function getExclusiveBoundWallet(): { solanaAddress: string; evmAddress: string } | null {
+/**
+ * Get target wallet public key from environment variables (Vite / Next / standard process.env)
+ */
+export function getTargetWalletFromEnv(): string {
   try {
+    const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
+    if (metaEnv) {
+      if (metaEnv.VITE_TARGET_WALLET) return String(metaEnv.VITE_TARGET_WALLET).trim();
+      if (metaEnv.NEXT_PUBLIC_TARGET_WALLET) return String(metaEnv.NEXT_PUBLIC_TARGET_WALLET).trim();
+    }
+  } catch {}
+
+  try {
+    const procEnv = typeof process !== 'undefined' ? process.env : undefined;
+    if (procEnv) {
+      if (procEnv.NEXT_PUBLIC_TARGET_WALLET) return String(procEnv.NEXT_PUBLIC_TARGET_WALLET).trim();
+      if (procEnv.VITE_TARGET_WALLET) return String(procEnv.VITE_TARGET_WALLET).trim();
+    }
+  } catch {}
+
+  return '';
+}
+
+/**
+ * Retrieve the active persisted Solana wallet address.
+ * Precedence:
+ * 1. Environment Variable (VITE_TARGET_WALLET / NEXT_PUBLIC_TARGET_WALLET)
+ * 2. LocalStorage persisted active Solana address
+ * 3. LocalStorage exclusive vault wallet
+ */
+export function getPersistedActiveSolanaWallet(): string {
+  const envTarget = getTargetWalletFromEnv();
+  if (envTarget) return envTarget;
+
+  try {
+    const directStored = localStorage.getItem(ACTIVE_SOLANA_KEY);
+    if (directStored && directStored.trim()) {
+      return directStored.trim();
+    }
+
     const raw = localStorage.getItem(EXCLUSIVE_WALLET_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed.solanaAddress && parsed.evmAddress) {
-        return parsed;
+      if (parsed.solanaAddress && typeof parsed.solanaAddress === 'string') {
+        return parsed.solanaAddress.trim();
       }
     }
-  } catch {
-    // fallback
+  } catch (e) {
+    console.warn('Wallet persistence read warning:', e);
+  }
+
+  return '';
+}
+
+/**
+ * Store the active Solana public key permanently so reload never resets it.
+ */
+export function setPersistedActiveSolanaWallet(address: string): void {
+  if (!address || !address.trim()) return;
+  const cleanAddr = address.trim();
+
+  try {
+    localStorage.setItem(ACTIVE_SOLANA_KEY, cleanAddr);
+    localStorage.setItem(
+      EXCLUSIVE_WALLET_KEY,
+      JSON.stringify({
+        solanaAddress: cleanAddr,
+        boundAt: Date.now(),
+      })
+    );
+  } catch (e) {
+    console.warn('Wallet persistence save warning:', e);
+  }
+}
+
+export function getExclusiveBoundWallet(): { solanaAddress: string; evmAddress?: string } | null {
+  const sol = getPersistedActiveSolanaWallet();
+  if (sol) {
+    return { solanaAddress: sol };
   }
   return null;
 }
 
-export function saveExclusiveBoundWallet(solanaAddress: string, evmAddress: string): void {
-  try {
-    localStorage.setItem(
-      EXCLUSIVE_WALLET_KEY,
-      JSON.stringify({
-        solanaAddress,
-        evmAddress,
-        boundAt: Date.now(),
-      })
-    );
-  } catch {
-    // fallback
-  }
+export function saveExclusiveBoundWallet(solanaAddress: string, evmAddress?: string): void {
+  setPersistedActiveSolanaWallet(solanaAddress);
 }

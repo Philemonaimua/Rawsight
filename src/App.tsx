@@ -87,14 +87,20 @@ import {
   executeRealEvmTrade,
   getOrCreateAutonomousVaultKeys,
   fetchLiveVaultBalances,
-  getBlockExplorerTxUrl
+  fetchSolanaBalance,
+  setupSolanaAccountSubscription,
+  getBlockExplorerTxUrl,
+  getSolanaRpcUrl
 } from './lib/web3Service';
 
 import {
   saveVaultState,
   loadVaultState,
   getExclusiveBoundWallet,
-  saveExclusiveBoundWallet
+  saveExclusiveBoundWallet,
+  getPersistedActiveSolanaWallet,
+  setPersistedActiveSolanaWallet,
+  getTargetWalletFromEnv
 } from './lib/persistence';
 
 import { 
@@ -106,7 +112,8 @@ import {
   ExternalLink,
   Wallet,
   Lock,
-  RefreshCw
+  RefreshCw,
+  ArrowDownToLine
 } from 'lucide-react';
 
 const INITIAL_CONFIG: VaultConfig = {
@@ -134,7 +141,7 @@ const INITIAL_CONFIG: VaultConfig = {
   gasPriority: 'FAST',
   autoSignDelegatedKey: true,
   customRpc: {
-    solana: 'https://api.mainnet-beta.solana.com',
+    solana: getSolanaRpcUrl(),
     bnb: 'https://bsc-dataseed.binance.org',
     robinhood: 'https://rpc.mainnet.chain.robinhood.com',
   },
@@ -147,14 +154,15 @@ const INITIAL_CONFIG: VaultConfig = {
 };
 
 const defaultVaultKeys = getOrCreateAutonomousVaultKeys();
+const initialBoundSolana = getPersistedActiveSolanaWallet() || defaultVaultKeys.solanaAddress;
 
 const INITIAL_WALLET_STATE: LiveWalletState = {
-  isConnected: false,
-  walletProvider: null,
-  address: '',
+  isConnected: Boolean(initialBoundSolana),
+  walletProvider: initialBoundSolana ? 'Persisted Solana Wallet' : null,
+  address: initialBoundSolana,
   chain: 'solana',
   vaultAddresses: {
-    solana: defaultVaultKeys.solanaAddress,
+    solana: initialBoundSolana,
     bnb: defaultVaultKeys.evmAddress,
     robinhood: defaultVaultKeys.evmAddress,
   },
@@ -255,16 +263,25 @@ export default function App() {
     { time: '00:00', totalValue: 0, pnl: 0 },
   ]);
 
-  // Determine Active Connected Public Key (Solana or EVM)
+  // Determine Active Solana Address (Prioritize connected adapter > persisted wallet > env target)
+  const activeSolanaAddress = (solConnected && publicKey ? publicKey.toBase58() : '') ||
+    getPersistedActiveSolanaWallet() ||
+    getTargetWalletFromEnv() ||
+    defaultVaultKeys.solanaAddress;
+
+  // Active address for general chain context
   const activeAddress = solConnected && publicKey 
     ? publicKey.toBase58() 
-    : (evmConnected && evmAddress ? evmAddress : (liveWallet.isConnected ? liveWallet.address : ''));
+    : (evmConnected && evmAddress ? evmAddress : activeSolanaAddress);
 
-  // 1. SOLFLARE / PHANTOM WALLET ADAPTER SYNC
+  // 1. SOLFLARE / PHANTOM WALLET ADAPTER & PERSISTENCE SYNCHRONIZATION
   useEffect(() => {
     if (solConnected && publicKey) {
       const pubKeyStr = publicKey.toBase58();
       const providerName = (solWallet?.adapter.name as any) || 'Solflare';
+
+      // Permanently persist connected public key to localStorage
+      setPersistedActiveSolanaWallet(pubKeyStr);
 
       setLiveWallet(prev => ({
         ...prev,
@@ -280,20 +297,6 @@ export default function App() {
         activeNetwork: 'Solana Mainnet-Beta',
         rpcLatencyMs: 14,
       }));
-
-      // Fetch live on-chain balance from Solana RPC
-      async function querySolBalance() {
-        try {
-          const live = await fetchLiveVaultBalances(pubKeyStr, defaultVaultKeys.evmAddress, config.customRpc);
-          setLiveWallet(prev => ({
-            ...prev,
-            balances: live,
-          }));
-        } catch (e) {
-          console.warn('Solana RPC query notice:', e);
-        }
-      }
-      querySolBalance();
     } else if (evmConnected && evmAddress) {
       setLiveWallet(prev => ({
         ...prev,
@@ -302,36 +305,90 @@ export default function App() {
         address: evmAddress,
         chain: 'bnb',
         vaultAddresses: {
-          solana: defaultVaultKeys.solanaAddress,
+          solana: activeSolanaAddress,
           bnb: evmAddress,
           robinhood: evmAddress,
         },
         activeNetwork: 'BNB Smart Chain (56)',
         rpcLatencyMs: 20,
       }));
+    } else if (activeSolanaAddress) {
+      setLiveWallet(prev => ({
+        ...prev,
+        isConnected: true,
+        walletProvider: prev.walletProvider || 'Persisted Solana Wallet',
+        address: activeSolanaAddress,
+        chain: 'solana',
+        vaultAddresses: {
+          ...prev.vaultAddresses,
+          solana: activeSolanaAddress,
+        },
+      }));
     }
-  }, [solConnected, publicKey, solWallet, evmConnected, evmAddress, config.customRpc]);
+  }, [solConnected, publicKey, solWallet, evmConnected, evmAddress, activeSolanaAddress]);
 
-  // 2. EXCLUSIVE PORTFOLIO & POSITION PERSISTENCE PER ENVIRONMENT & WALLET
-  // Load environment & wallet specific data with dual-layer IndexedDB + local fallback
+  // 2. AGGRESSIVE 5-SECOND POLLING LOOP & WEBSOCKET ACCOUNT CHANGE LISTENER
+  useEffect(() => {
+    if (!activeSolanaAddress) return;
+
+    let isSubscribed = true;
+
+    // Fetch initial balance immediately
+    const updateBalance = async () => {
+      try {
+        const solBalance = await fetchSolanaBalance(activeSolanaAddress, config.customRpc.solana);
+        if (isSubscribed) {
+          setLiveWallet(prev => ({
+            ...prev,
+            balances: {
+              ...prev.balances,
+              sol: solBalance,
+              totalUsd: solBalance * 185 + prev.balances.bnb * 580 + prev.balances.usdc,
+            },
+          }));
+        }
+      } catch (err) {
+        console.warn('Balance poll note:', err);
+      }
+    };
+
+    updateBalance();
+
+    // 5-second aggressive polling loop
+    const pollInterval = setInterval(updateBalance, 5000);
+
+    // Live WebSocket connection listener (onAccountChange)
+    const unsubscribeWs = setupSolanaAccountSubscription(
+      activeSolanaAddress,
+      (newSolBalance) => {
+        if (isSubscribed) {
+          setLiveWallet(prev => ({
+            ...prev,
+            balances: {
+              ...prev.balances,
+              sol: newSolBalance,
+              totalUsd: newSolBalance * 185 + prev.balances.bnb * 580 + prev.balances.usdc,
+            },
+          }));
+        }
+      },
+      config.customRpc.solana
+    );
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(pollInterval);
+      unsubscribeWs();
+    };
+  }, [activeSolanaAddress, config.customRpc.solana]);
+
+  // 3. EXCLUSIVE PORTFOLIO & POSITION PERSISTENCE PER ENVIRONMENT & WALLET
   useEffect(() => {
     const addrKey = activeAddress || defaultVaultKeys.solanaAddress;
     
     // Save exclusive bound wallet keypair
     if (activeAddress) {
       saveExclusiveBoundWallet(activeAddress, defaultVaultKeys.evmAddress);
-    }
-
-    if (!activeAddress && config.tradingMode === 'LIVE_MAINNET') {
-      // Disconnected live mainnet state
-      setPositions([]);
-      setCashBalance(0.00);
-      setRealizedPnl(0.00);
-      setWinningTrades(0);
-      setLosingTrades(0);
-      setRugsShielded(0);
-      setInsiderDodged(0);
-      return;
     }
 
     async function hydrate() {
@@ -386,14 +443,21 @@ export default function App() {
     });
   }, [cashBalance, positions, logs, config, realizedPnl, winningTrades, losingTrades, rugsShielded, insiderDodged, chartData, activeAddress]);
 
+  // Sol balance and trading readiness
+  const solBalance = liveWallet.balances.sol;
+  const isSolFunded = solBalance >= 0.005;
+  const effectiveCash = config.tradingMode === 'LIVE_MAINNET' 
+    ? (cashBalance > 0 ? cashBalance : solBalance * 185) 
+    : cashBalance;
+
   // Compute calculated financials
   const allocatedInPositions = positions.reduce((acc, p) => acc + p.investedAmountUsd, 0);
   const unrealizedPnl = positions.reduce((acc, p) => acc + p.currentPnlUsd, 0);
-  const totalNav = cashBalance + allocatedInPositions + unrealizedPnl;
+  const totalNav = effectiveCash + allocatedInPositions + unrealizedPnl;
 
   const vaultState: VaultState = {
     totalNavUsd: totalNav,
-    cashBalanceUsd: cashBalance,
+    cashBalanceUsd: effectiveCash,
     allocatedInPositionsUsd: allocatedInPositions,
     realizedPnlUsd: realizedPnl,
     unrealizedPnlUsd: unrealizedPnl,
@@ -494,36 +558,10 @@ export default function App() {
 
   // Execute Snipe with $1.00 USD strict minimum execution floor & guardrails
   const executeSnipe = useCallback(async (token: MemeToken, customAmountUsd?: number) => {
-    const rawTradeAmount = customAmountUsd !== undefined ? customAmountUsd : computeStrategyAllocation(token);
-    let tradeAmount = rawTradeAmount;
-
-    // Guardrail Handling: If calculated or custom evaluates to less than $1.00 USD
-    if (tradeAmount < 1.0) {
-      if (cashBalance >= 1.0) {
-        tradeAmount = 1.0; // Automatically default to $1.00 if funds allow
-      } else {
-        // Block the transaction with notice
-        const blockLog: TradeLog = {
-          id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          timestamp: Date.now(),
-          type: 'RADAR_REJECT',
-          tokenSymbol: token.symbol,
-          tokenName: token.name,
-          chain: token.chain,
-          amountUsd: rawTradeAmount,
-          note: `Execution blocked: Minimum vault execution is $1.00. (Available balance: $${cashBalance.toFixed(2)} USD).`,
-          txHash: '0x0000000000000000',
-        };
-        setLogs(l => [blockLog, ...l.slice(0, 40)]);
-        return;
-      }
-    }
-
-    // Ensure within available cash
-    tradeAmount = Math.min(cashBalance, tradeAmount);
-
-    const minFloor = Math.max(1.0, config.minTradeSizeUsd || 1.0);
-    if (tradeAmount < 1.0 || cashBalance < 1.0 || tradeAmount < minFloor || cashBalance < minFloor) {
+    const isLive = config.tradingMode === 'LIVE_MAINNET';
+    
+    // In live mode, verify wallet balance threshold (0.005 SOL)
+    if (isLive && token.chain === 'solana' && solBalance < 0.005) {
       const blockLog: TradeLog = {
         id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         timestamp: Date.now(),
@@ -531,35 +569,39 @@ export default function App() {
         tokenSymbol: token.symbol,
         tokenName: token.name,
         chain: token.chain,
-        amountUsd: tradeAmount,
-        note: `Execution blocked: Minimum vault execution is $1.00. (Floor: $${minFloor.toFixed(2)} USD, Available: $${cashBalance.toFixed(2)} USD).`,
+        amountUsd: customAmountUsd || 1.0,
+        note: `Insufficient Funds: Balance (${solBalance.toFixed(4)} SOL) is below 0.005 SOL minimum threshold. Please top up your wallet.`,
         txHash: '0x0000000000000000',
       };
       setLogs(l => [blockLog, ...l.slice(0, 40)]);
       return;
     }
 
+    const rawTradeAmount = customAmountUsd !== undefined ? customAmountUsd : computeStrategyAllocation(token);
+    let tradeAmount = Math.max(1.0, rawTradeAmount);
+
     if (positions.length >= config.maxActivePositions) {
       return;
     }
 
     const newPosId = `pos-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const isLive = config.tradingMode === 'LIVE_MAINNET';
     let realTxHash = `0x${Math.random().toString(16).slice(2, 10)}...${Math.random().toString(16).slice(2, 8)}`;
 
     if (isLive) {
       try {
         if (token.chain === 'solana') {
+          const tradeSol = Math.min(Math.max(0.001, tradeAmount / 185), Math.max(0.001, solBalance - 0.002));
           const res = await executeRealSolanaTrade({
             targetMintAddress: token.contractAddress,
-            amountSol: tradeAmount / 185,
+            amountSol: tradeSol,
             slippageBps: Math.round(config.slippageTolerancePercent * 100),
             jitoTipSol: config.jitoMevProtection ? config.jitoTipSol : undefined,
             customRpcUrl: config.customRpc.solana,
+            userPublicKey: activeSolanaAddress,
           });
           realTxHash = res.txHash;
           setLastTxAlert({
-            message: `Real Solana Swap broadcasted: Bought ${token.symbol} for $${tradeAmount.toFixed(2)} USD`,
+            message: `Solana DEX Swap Confirmed: Bought ${token.symbol} (${tradeSol.toFixed(4)} SOL)`,
             url: res.explorerUrl,
           });
         } else {
@@ -581,7 +623,7 @@ export default function App() {
       }
     }
 
-    setCashBalance(c => Number((c - tradeAmount).toFixed(2)));
+    setCashBalance(c => Number((Math.max(0, c - tradeAmount)).toFixed(2)));
 
     const newPosition: TradePosition = {
       id: newPosId,
@@ -622,7 +664,7 @@ export default function App() {
     };
 
     setLogs(l => [newLog, ...l.slice(0, 40)]);
-  }, [cashBalance, config, positions.length, computeStrategyAllocation, triggerAudio]);
+  }, [config, solBalance, positions.length, computeStrategyAllocation, triggerAudio, activeSolanaAddress]);
 
   // Click on "Snipe Now" on Radar -> Opens Snipe Modal
   const handleOpenSnipeModal = useCallback((token: MemeToken) => {
@@ -716,12 +758,15 @@ export default function App() {
       });
 
       // Automated Sniping check on streaming launchpad/DEX events
+      const isReadyToAutoSnipe = config.tradingMode === 'LIVE_MAINNET' 
+        ? solBalance >= 0.005 
+        : (effectiveCash >= 1.0 && effectiveCash >= (config.minTradeSizeUsd || 1.0));
+
       if (
         config.autoTradeEnabled &&
         newToken.scrutinyStatus === 'PASSED_RAWSIGHT' &&
         config.allowedChains[newToken.chain] &&
-        cashBalance >= 1.0 &&
-        cashBalance >= (config.minTradeSizeUsd || 1.0) &&
+        isReadyToAutoSnipe &&
         positions.length < config.maxActivePositions
       ) {
         executeSnipe(newToken);
@@ -736,7 +781,7 @@ export default function App() {
       unsubTokens();
       unsubStatus();
     };
-  }, [config, cashBalance, positions.length, executeSnipe]);
+  }, [config, effectiveCash, solBalance, positions.length, executeSnipe]);
 
   // Live Auto Trading & Position Monitor Engine (Tick loop)
   useEffect(() => {
@@ -798,8 +843,11 @@ export default function App() {
       });
 
       // 3. Autonomous Sniping on Real Live Launchpad Tokens ($1.00 minimum floor)
-      if (config.autoTradeEnabled && radarTokens.length > 0 && Math.random() > 0.60) {
-        // Pick an un-sniped live token from radar
+      const isReadyToAutoSnipe = config.tradingMode === 'LIVE_MAINNET' 
+        ? solBalance >= 0.005 
+        : (effectiveCash >= 1.0 && effectiveCash >= (config.minTradeSizeUsd || 1.0));
+
+      if (config.autoTradeEnabled && isReadyToAutoSnipe && radarTokens.length > 0 && Math.random() > 0.60) {
         const availableLiveTokens = radarTokens.filter(
           t => !positions.some(p => p.token.contractAddress.toLowerCase() === t.contractAddress.toLowerCase())
         );
@@ -810,8 +858,6 @@ export default function App() {
           if (
             targetToken.scrutinyStatus === 'PASSED_RAWSIGHT' &&
             isChainAllowed &&
-            cashBalance >= 1.0 &&
-            cashBalance >= (config.minTradeSizeUsd || 1.0) &&
             positions.length < config.maxActivePositions
           ) {
             executeSnipe(targetToken);
@@ -824,14 +870,14 @@ export default function App() {
         const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const last = prev[prev.length - 1];
         if (last && last.time === nowTime) return prev;
-        const currentTotal = cashBalance + positions.reduce((acc, p) => acc + p.investedAmountUsd + p.currentPnlUsd, 0);
+        const currentTotal = effectiveCash + positions.reduce((acc, p) => acc + p.investedAmountUsd + p.currentPnlUsd, 0);
         return [...prev.slice(-12), { time: nowTime, totalValue: Number(currentTotal.toFixed(2)), pnl: Number((currentTotal - 2500).toFixed(2)) }];
       });
 
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [config, cashBalance, positions, radarTokens, closePosition, executeSnipe]);
+  }, [config, effectiveCash, solBalance, positions, radarTokens, closePosition, executeSnipe]);
 
   return (
     <SecurityGate
@@ -858,42 +904,91 @@ export default function App() {
           activeChains={config.allowedChains}
         />
 
-        {/* Real Mainnet Live Action Bar */}
-        <div className="bg-[#0A0A0A] border-b border-[#D9F99D]/30 py-2.5 px-4 sm:px-6 lg:px-8 font-mono">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs">
-            <div className="flex items-center gap-2.5">
+        {/* Real Mainnet Trading Status & Readiness Bar */}
+        <div className={`py-2 px-4 sm:px-6 lg:px-8 border-b font-mono transition-colors ${
+          config.tradingMode === 'LIVE_MAINNET'
+            ? isSolFunded
+              ? 'bg-[#0A1A0A] border-[#D9F99D]/40 text-[#D9F99D]'
+              : 'bg-[#1A0F0A] border-amber-500/40 text-amber-300'
+            : 'bg-[#0A0A0A] border-white/10 text-zinc-300'
+        }`}>
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-2.5 text-xs">
+            <div className="flex items-center gap-2.5 flex-wrap">
               <span className="flex h-2.5 w-2.5 relative shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#D9F99D] opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#D9F99D]"></span>
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                  config.tradingMode === 'LIVE_MAINNET' ? (isSolFunded ? 'bg-[#D9F99D]' : 'bg-amber-400') : 'bg-zinc-400'
+                }`}></span>
+                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                  config.tradingMode === 'LIVE_MAINNET' ? (isSolFunded ? 'bg-[#D9F99D]' : 'bg-amber-400') : 'bg-zinc-400'
+                }`}></span>
               </span>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-white uppercase tracking-wider text-[11px] sm:text-xs">
-                  {config.tradingMode === 'LIVE_MAINNET' ? 'LIVE ON-CHAIN MAINNET ACTIVE' : 'SIMULATION MODE'}
-                </span>
-                <span className="text-zinc-500 hidden sm:inline">•</span>
-                <span className="text-zinc-400 text-[11px] hidden md:inline">
-                  {config.tradingMode === 'LIVE_MAINNET' 
-                    ? 'Decentralized order routing via Solana Raydium, BSC PancakeSwap & Robinhood Chain'
-                    : 'Algorithmic sandbox backtesting'}
-                </span>
-              </div>
+
+              {config.tradingMode === 'LIVE_MAINNET' ? (
+                isSolFunded ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-black text-[#D9F99D] uppercase tracking-wider text-[11px] sm:text-xs">
+                      READY TO TRADE
+                    </span>
+                    <span className="text-zinc-500">•</span>
+                    <span className="text-white font-bold">
+                      {solBalance.toFixed(4)} SOL (~${(solBalance * 185).toFixed(2)} USD)
+                    </span>
+                    <span className="text-zinc-500">•</span>
+                    <span className="text-zinc-300 text-[11px]">
+                      Auto-Sniper & Jupiter DEX Swaps Armed
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-black text-amber-400 uppercase tracking-wider text-[11px] sm:text-xs flex items-center gap-1">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      UNFUNDED ACCOUNT / LOW BALANCE ({solBalance.toFixed(4)} SOL &lt; 0.005 SOL)
+                    </span>
+                    <span className="text-zinc-500">•</span>
+                    <span className="text-amber-200/80 text-[11px]">
+                      Deposit at least 0.005 SOL to execute live mainnet swaps
+                    </span>
+                  </div>
+                )
+              ) : (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-white uppercase tracking-wider text-[11px] sm:text-xs">
+                    SIMULATION SANDBOX ACTIVE
+                  </span>
+                  <span className="text-zinc-500">•</span>
+                  <span className="text-zinc-400 text-[11px]">
+                    Algorithmic testing with paper liquidity ($5,000.00 simulated reserve)
+                  </span>
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+              {config.tradingMode === 'LIVE_MAINNET' && !isSolFunded && (
+                <button
+                  onClick={() => setIsDepositOpen(true)}
+                  className="flex items-center justify-center gap-1 px-2.5 py-1 rounded bg-amber-400 text-black font-black text-[10px] uppercase hover:bg-amber-300 transition-all cursor-pointer"
+                >
+                  <ArrowDownToLine className="w-3 h-3" />
+                  <span>Deposit SOL</span>
+                </button>
+              )}
+
               <button
                 onClick={() => setIsWalletOpen(true)}
-                className="flex items-center justify-center gap-1.5 px-3 py-1.5 min-h-[40px] rounded-md bg-[#D9F99D]/10 border border-[#D9F99D]/40 text-[#D9F99D] hover:bg-[#D9F99D] hover:text-black transition-all text-[11px] font-bold uppercase cursor-pointer"
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 min-h-[36px] rounded-md bg-black/40 border border-[#D9F99D]/40 text-[#D9F99D] hover:bg-[#D9F99D] hover:text-black transition-all text-[11px] font-bold uppercase cursor-pointer"
               >
                 <Wallet className="w-3.5 h-3.5" />
                 <span>
-                  {liveWallet?.isConnected 
-                    ? `${liveWallet.walletProvider || 'Key'}: ${liveWallet.address.slice(0, 4)}...${liveWallet.address.slice(-3)}` 
+                  {liveWallet?.isConnected && activeSolanaAddress
+                    ? `${liveWallet.walletProvider || 'Wallet'}: ${activeSolanaAddress.slice(0, 4)}...${activeSolanaAddress.slice(-4)}` 
                     : 'Connect Solflare / Phantom'}
                 </span>
               </button>
+
               <button
                 onClick={handleToggleTradingMode}
-                className={`px-3 py-1.5 min-h-[40px] rounded-md text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+                className={`px-3 py-1.5 min-h-[36px] rounded-md text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
                   config.tradingMode === 'LIVE_MAINNET'
                     ? 'bg-zinc-800 text-zinc-300 hover:text-white'
                     : 'bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30'
@@ -918,43 +1013,17 @@ export default function App() {
                   rel="noreferrer" 
                   className="underline flex items-center gap-1 hover:opacity-80 ml-2"
                 >
-                  <span>View On-Chain Explorer</span>
+                  <span>View On-Chain Solscan Explorer</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               )}
             </div>
             <button 
               onClick={() => setLastTxAlert(null)}
-              className="text-black font-black hover:opacity-70 ml-2 text-sm"
+              className="text-black font-black hover:opacity-70 ml-2 text-sm cursor-pointer"
             >
               ✕
             </button>
-          </div>
-        )}
-
-        {/* Wallet Disconnected Notice Banner */}
-        {!liveWallet.isConnected && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 w-full">
-            <div className="p-3 sm:p-4 rounded-xl bg-zinc-950/80 border border-[#D9F99D]/20 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2.5 text-zinc-300">
-                <div className="w-8 h-8 rounded-lg bg-[#D9F99D]/10 border border-[#D9F99D]/30 flex items-center justify-center text-[#D9F99D] shrink-0">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <div>
-                  <span className="font-bold text-white block">Private Key Protected Terminal</span>
-                  <span className="text-[11px] text-zinc-400">
-                    Connect your Solflare or Phantom wallet to decrypt your private positions and stream real on-chain liquidity.
-                  </span>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setIsWalletOpen(true)}
-                className="px-4 py-2 min-h-[44px] rounded-lg text-xs font-black uppercase tracking-wider bg-[#D9F99D] text-black hover:bg-[#bef264] transition-all cursor-pointer shrink-0 shadow-md shadow-[#D9F99D]/10"
-              >
-                Connect Wallet
-              </button>
-            </div>
           </div>
         )}
 
@@ -995,7 +1064,7 @@ export default function App() {
                 onSnipeToken={handleOpenSnipeModal}
                 vaultConfig={config}
                 onUpdateVaultConfig={(updated) => setConfig(c => ({ ...c, ...updated }))}
-                cashBalanceUsd={cashBalance}
+                cashBalanceUsd={effectiveCash}
               />
             </div>
 
@@ -1052,7 +1121,7 @@ export default function App() {
         <WithdrawModal
           isOpen={isWithdrawOpen}
           onClose={() => setIsWithdrawOpen(false)}
-          availableBalance={cashBalance}
+          availableBalance={effectiveCash}
           walletState={liveWallet}
           tradingMode={config.tradingMode}
           onConfirmWithdraw={handleConfirmWithdraw}
@@ -1078,7 +1147,7 @@ export default function App() {
           }}
           token={snipeCandidateToken}
           vaultConfig={config}
-          cashBalanceUsd={cashBalance}
+          cashBalanceUsd={effectiveCash}
           totalNavUsd={totalNav}
           onExecuteSnipe={(token, customAmountUsd) => executeSnipe(token, customAmountUsd)}
         />

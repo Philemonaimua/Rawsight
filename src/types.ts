@@ -258,7 +258,7 @@ export interface VaultConfig {
 
 export interface LiveWalletState {
   isConnected: boolean;
-  walletProvider: 'Autonomous Vault Key' | 'Phantom' | 'Solflare' | 'Backpack' | 'MetaMask' | 'Rabby' | 'Coinbase' | 'Robinhood Gateway' | 'Solana Wallet' | null;
+  walletProvider: string | null;
   address: string;
   chain: Chain;
   vaultAddresses: {

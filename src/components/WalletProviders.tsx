@@ -3,9 +3,10 @@ import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
-import { clusterApiUrl } from '@solana/web3.js';
+import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
+import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 import { wagmiConfig } from '../lib/wagmiConfig';
-import { MAINNET_RPCS } from '../lib/web3Service';
+import { getSolanaRpcUrl } from '../lib/web3Service';
 
 // Include wallet adapter default UI styles
 import '@solana/wallet-adapter-react-ui/styles.css';
@@ -21,13 +22,16 @@ export const MultiChainWalletProvider: React.FC<WalletProvidersProps> = ({
   children,
   solanaRpcUrl 
 }) => {
-  // Use custom RPC or public Solana Mainnet-Beta endpoint
+  // Use custom RPC or environment RPC variable (never public clusterApiUrl due to 429 rate limits)
   const endpoint = useMemo(() => {
-    return solanaRpcUrl || MAINNET_RPCS.solana || clusterApiUrl('mainnet-beta');
+    return getSolanaRpcUrl(solanaRpcUrl);
   }, [solanaRpcUrl]);
 
-  // Standard Wallet auto-detection (empty wallets array allows @solana/wallet-adapter-react to detect standard wallet extensions)
-  const wallets = useMemo(() => [], []);
+  // Support Phantom, Solflare, Backpack and standard wallet extensions
+  const wallets = useMemo(() => [
+    new PhantomWalletAdapter(),
+    new SolflareWalletAdapter(),
+  ], []);
 
   return (
     <WagmiProvider config={wagmiConfig}>

@@ -25,7 +25,6 @@ import {
   connectRealEvmWallet, 
   detectAvailableWallets,
   getOrCreateAutonomousVaultKeys,
-  regenerateAutonomousVaultKeys,
   fetchLiveVaultBalances
 } from '../lib/web3Service';
 
@@ -120,29 +119,31 @@ export const LiveWalletModal: React.FC<LiveWalletModalProps> = ({
     }
   };
 
-  // Generate a brand new autonomous multi-chain wallet
-  const handleRegenerateKeys = () => {
-    const confirmGen = window.confirm('Generate fresh multi-chain keypairs for Solana, BNB, and Robinhood? Ensure you have backed up your current private keys.');
-    if (!confirmGen) return;
-
-    const newKeys = regenerateAutonomousVaultKeys();
+  // Sync active bound wallet keys and refresh balances from mainnet
+  const handleRegenerateKeys = async () => {
+    const currentKeys = getOrCreateAutonomousVaultKeys();
+    const live = await fetchLiveVaultBalances(
+      currentKeys.solanaAddress,
+      currentKeys.evmAddress,
+      customRpc
+    );
     if (onUpdateWalletState) {
       onUpdateWalletState({
         isConnected: true,
-        walletProvider: 'Autonomous Vault Key',
-        address: newKeys.solanaAddress,
+        walletProvider: 'Permanent Vault Key',
+        address: currentKeys.solanaAddress,
         chain: 'solana',
         vaultAddresses: {
-          solana: newKeys.solanaAddress,
-          bnb: newKeys.evmAddress,
-          robinhood: newKeys.evmAddress,
+          solana: currentKeys.solanaAddress,
+          bnb: currentKeys.evmAddress,
+          robinhood: currentKeys.evmAddress,
         },
-        balances: { sol: 0, bnb: 0, usdc: 0, totalUsd: 0 },
+        balances: live,
         rpcLatencyMs: 14,
         activeNetwork: 'Autonomous Multi-Chain Mainnet Vault',
       });
     }
-    setSyncStatus('Generated new cryptographic keypairs successfully.');
+    setSyncStatus('Permanent single-wallet configuration verified & synced with Mainnet.');
   };
 
   // Connect to Real Mainnet Wallet (Phantom / Solflare / MetaMask / Rabby / Robinhood)

@@ -161,20 +161,32 @@ export class AutonomousTradingWorker {
 
   public registerClient(ws: WebSocket) {
     this.wsClients.add(ws);
-    // Send initial snapshot
-    ws.send(JSON.stringify({ type: 'SNAPSHOT', data: this.state }));
+    
+    ws.on('error', (err) => {
+      // Graceful error handling for disconnected clients
+      this.wsClients.delete(ws);
+    });
 
     ws.on('close', () => {
       this.wsClients.delete(ws);
     });
+
+    // Send initial snapshot safely
+    try {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'SNAPSHOT', data: this.state }));
+      }
+    } catch {}
   }
 
   public broadcast(type: string, data: any) {
     const payload = JSON.stringify({ type, data, timestamp: Date.now() });
     for (const client of this.wsClients) {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(payload);
-      }
+      try {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(payload);
+        }
+      } catch {}
     }
   }
 

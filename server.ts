@@ -22,6 +22,11 @@ async function startServer() {
     worker.registerClient(ws);
   });
 
+  wss.on('error', (err) => {
+    // Graceful error logging for WebSocket server
+    console.warn('[WS Server] Notice:', err?.message || err);
+  });
+
   // REST API Routes
   app.get('/api/health', (req, res) => {
     res.json({

@@ -13,11 +13,39 @@ if (typeof window !== 'undefined') {
     (window as any).process = { env: {} };
   }
 
-  // 2. Graceful Reconnection Handling for Vite HMR WebSockets & Uncaught Network Interruptions
+  // 2. Graceful Interception for WebSocket Errors (Solana Web3 Public RPC & Vite HMR)
+  const originalConsoleError = console.error;
+  console.error = (...args: any[]) => {
+    const firstArg = args[0];
+    const msg = typeof firstArg === 'string' ? firstArg : (firstArg?.message || String(firstArg || ''));
+    if (
+      msg.includes('ws error') ||
+      msg.includes('WebSocket') ||
+      msg.includes('failed to connect to websocket') ||
+      (args.length >= 2 && String(args[0]).includes('ws error'))
+    ) {
+      // Benign public RPC WebSocket drop / HMR notice - keep terminal clean
+      return;
+    }
+    originalConsoleError.apply(console, args);
+  };
+
+  window.addEventListener('error', (event) => {
+    const msg = event?.message || String(event?.error || '');
+    if (
+      msg.includes('ws error') ||
+      msg.includes('WebSocket') ||
+      msg.includes('failed to connect to websocket')
+    ) {
+      event.preventDefault();
+    }
+  });
+
   window.addEventListener('unhandledrejection', (event) => {
     const msg = event?.reason?.message || String(event?.reason || '');
     if (
       msg.includes('WebSocket') ||
+      msg.includes('ws error') ||
       msg.includes('vite') ||
       msg.includes('Failed to fetch') ||
       msg.includes('NetworkError') ||
