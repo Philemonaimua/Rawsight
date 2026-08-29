@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { useAccount } from 'wagmi';
+import { Analytics } from '@vercel/analytics/react';
 
 import { 
   Navbar 
@@ -1142,6 +1143,9 @@ export default function App() {
           totalNavUsd={totalNav}
           onExecuteSnipe={(token, customAmountUsd) => executeSnipe(token, customAmountUsd)}
         />
+        
+        {/* Vercel Web Analytics */}
+        <Analytics />
       </div>
     </SecurityGate>
   );
