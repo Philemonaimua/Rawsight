@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { Buffer } from 'buffer';
 import App from './App.tsx';
 import './index.css';
-import { UnifiedWalletProvider } from './providers/WalletProvider.tsx';
 
 // 1. Node Buffer Polyfill & Global Availability for Solana Web3 & EVM Transactions
 if (typeof window !== 'undefined') {
@@ -75,9 +74,7 @@ if (typeof window !== 'undefined') {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <UnifiedWalletProvider>
-      <App />
-    </UnifiedWalletProvider>
+    <App />
   </StrictMode>,
 );
 

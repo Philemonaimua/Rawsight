@@ -1,12 +1,12 @@
 import React from 'react';
-import { ShieldCheck, Activity, Terminal, ExternalLink } from 'lucide-react';
+import { ShieldCheck, Activity, KeyRound, ExternalLink } from 'lucide-react';
 
 interface FooterProps {
-  onOpenWallet: () => void;
   onOpenStrategy: () => void;
+  onOpenDeposit?: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onOpenWallet, onOpenStrategy }) => {
+export const Footer: React.FC<FooterProps> = ({ onOpenStrategy, onOpenDeposit }) => {
   return (
     <footer className="w-full border-t border-[#D9F99D]/20 bg-[#050505] text-zinc-400 font-mono text-xs mt-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -25,7 +25,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenWallet, onOpenStrategy }) 
               </span>
             </div>
             <p className="text-[11px] text-zinc-400 leading-relaxed max-w-sm">
-              Autonomous multi-chain algorithmic liquidity vault and rug shield defense engine. Operating non-custodially on Solana, BNB Chain, and Robinhood Chain.
+              Autonomous multi-chain algorithmic liquidity vault and rug shield defense engine. Operating non-custodially on Solana, BNB Chain, and Robinhood Chain with Cloud SQL persistence.
             </p>
           </div>
 
@@ -62,17 +62,19 @@ export const Footer: React.FC<FooterProps> = ({ onOpenWallet, onOpenStrategy }) 
           {/* Quick Controls */}
           <div className="md:col-span-3 space-y-2">
             <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold block">
-              Terminal Utilities
+              Terminal Controls
             </span>
             <div className="flex flex-col gap-1.5 text-xs">
-              <button
-                type="button"
-                onClick={onOpenWallet}
-                className="text-left text-zinc-300 hover:text-[#D9F99D] transition-colors py-1 cursor-pointer flex items-center gap-1.5"
-              >
-                <Terminal className="w-3.5 h-3.5" />
-                <span>Web3 Wallet & Keypair Hub</span>
-              </button>
+              {onOpenDeposit && (
+                <button
+                  type="button"
+                  onClick={onOpenDeposit}
+                  className="text-left text-zinc-300 hover:text-[#D9F99D] transition-colors py-1 cursor-pointer flex items-center gap-1.5"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Deposit Liquidity Reserve</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onOpenStrategy}
@@ -83,7 +85,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenWallet, onOpenStrategy }) 
               </button>
               <div className="flex items-center gap-1 text-[11px] text-zinc-500 pt-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#D9F99D]" />
-                <span>Zero Custodial Risk • Private Keys Kept Client-Side</span>
+                <span>Non-Custodial Multi-Chain Engine</span>
               </div>
             </div>
           </div>
@@ -100,9 +102,9 @@ export const Footer: React.FC<FooterProps> = ({ onOpenWallet, onOpenStrategy }) 
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-zinc-400">Mainnet Beta</span>
+            <span className="text-zinc-400">Mainnet Core</span>
             <span className="text-zinc-500">|</span>
-            <span className="text-zinc-400">MEV Protected</span>
+            <span className="text-zinc-400">MEV Shielded</span>
             <span className="text-zinc-500">|</span>
             <span className="text-[#D9F99D]">Status: Operational</span>
           </div>

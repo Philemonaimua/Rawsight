@@ -291,3 +291,36 @@ export interface VaultState {
   historicalCurve?: { time: string; totalValue: number; pnl: number }[];
 }
 
+export interface ValidatorNodeStatus {
+  chain: Chain;
+  name: string;
+  endpoint: string;
+  blockOrSlot: number;
+  latencyMs: number;
+  status: 'ONLINE' | 'SYNCED' | 'VERIFIED' | 'RATE_LIMITED';
+  lastVerified: number;
+}
+
+export interface ValidatorSyncTelemetry {
+  isVerifying: boolean;
+  lastVerifiedAt: number;
+  solanaSlot: number;
+  bscBlock: number;
+  robinhoodBlock: number;
+  avgLatencyMs: number;
+  verifiedValidatorsCount: number;
+  totalSyncedAddresses: number;
+  heliusConfirmed?: boolean;
+  quickNodeConfirmed?: boolean;
+  autoTradingPrimed?: boolean;
+  confirmationMessage?: string;
+  heliusEndpoint?: string;
+  quickNodeEndpoint?: string;
+  walletSyncStatus: {
+    solanaVault: { address: string; confirmedBalance: number; symbol: string; verifiedBy: string };
+    bnbVault: { address: string; confirmedBalance: number; symbol: string; verifiedBy: string };
+    robinhoodVault: { address: string; confirmedBalance: number; symbol: string; verifiedBy: string };
+    externalWallet?: { address: string; chain: Chain; balance: number; provider: string };
+  };
+}
+

@@ -1,128 +1,99 @@
 import React, { useState } from 'react';
 import { 
   X, 
-  Wallet, 
   ArrowDownCircle, 
   ShieldCheck, 
   Check,
   Copy,
   ExternalLink,
   RefreshCw,
-  QrCode,
-  Sparkles
+  AlertCircle,
+  Cpu,
+  Layers
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
-import { Chain, LiveWalletState, TradingMode } from '../types';
+import { Chain } from '../types';
 import { CHAINS_CONFIG } from '../data/mockTokens';
 import { getOrCreateAutonomousVaultKeys, fetchLiveVaultBalances } from '../lib/web3Service';
 
 interface DepositModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirmDeposit: (amountUsd: number, chain: Chain) => void;
-  walletState?: LiveWalletState;
   onSyncLiveBalances?: () => void;
-  tradingMode?: TradingMode;
+  vaultBalances?: {
+    sol: number;
+    bnb: number;
+    eth: number;
+    usdc: number;
+    totalUsd: number;
+  };
 }
 
 export const DepositModal: React.FC<DepositModalProps> = ({
   isOpen,
   onClose,
-  onConfirmDeposit,
-  walletState,
   onSyncLiveBalances,
-  tradingMode = 'LIVE_MAINNET',
+  vaultBalances,
 }) => {
-  const isLive = tradingMode === 'LIVE_MAINNET';
   const [selectedChain, setSelectedChain] = useState<Chain>('solana');
-  const [depositMode, setDepositMode] = useState<'connected_wallet' | 'direct_transfer'>(
-    isLive && walletState?.isConnected ? 'connected_wallet' : 'direct_transfer'
-  );
-  const [amount, setAmount] = useState<number>(isLive ? 100 : 1000);
-  const [customAmountStr, setCustomAmountStr] = useState<string>(isLive ? '100' : '1000');
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [isCheckingOnChain, setIsCheckingOnChain] = useState<boolean>(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<{
+    verified: boolean;
+    text: string;
+    timestamp: string;
+  } | null>(null);
 
   if (!isOpen) return null;
 
-  const isConnected = Boolean(walletState?.isConnected && walletState?.address);
-  const targetAddress = isConnected 
-    ? (walletState?.address || '') 
-    : (selectedChain === 'solana' ? 'No Solana wallet connected' : 'No EVM wallet connected');
+  const autoKeys = getOrCreateAutonomousVaultKeys();
+  const targetAddress = selectedChain === 'solana' ? autoKeys.solanaAddress : autoKeys.evmAddress;
+  const currentChainConfig = CHAINS_CONFIG[selectedChain];
 
   const handleCopyAddress = () => {
-    if (!isConnected || !walletState?.address) return;
-    navigator.clipboard.writeText(walletState.address);
+    if (!targetAddress) return;
+    navigator.clipboard.writeText(targetAddress);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleCheckOnChainSync = async () => {
-    if (!walletState?.address) return;
     setIsCheckingOnChain(true);
-    setSyncMessage(null);
     try {
-      const res = await fetchLiveVaultBalances(
-        selectedChain === 'solana' ? walletState.address : '',
-        selectedChain !== 'solana' ? walletState.address : ''
-      );
+      const res = await fetchLiveVaultBalances(autoKeys.solanaAddress, autoKeys.evmAddress);
       if (onSyncLiveBalances) {
         onSyncLiveBalances();
       }
-      setSyncMessage(`Live on-chain check completed: ${res.sol.toFixed(3)} SOL • ${res.bnb.toFixed(3)} BNB.`);
+      setSyncStatus({
+        verified: true,
+        text: `Confirmed on-chain balances: ${res.sol.toFixed(4)} SOL • ${res.bnb.toFixed(4)} BNB • ${res.eth.toFixed(4)} ETH (~$${res.totalUsd.toFixed(2)} USD).`,
+        timestamp: new Date().toLocaleTimeString(),
+      });
     } catch {
-      setSyncMessage('RPC check completed. If you recently transferred funds, allow 15-30s for validator confirmations.');
+      setSyncStatus({
+        verified: false,
+        text: 'Polled RPC nodes. Incoming transactions appear automatically once confirmed in validator blocks.',
+        timestamp: new Date().toLocaleTimeString(),
+      });
     } finally {
       setIsCheckingOnChain(false);
     }
   };
 
-  const handlePreset = (val: number) => {
-    setAmount(val);
-    setCustomAmountStr(val.toString());
-  };
-
-  const handlePercentOfWallet = (pct: number) => {
-    const total = walletState?.balances?.totalUsd || 0;
-    const calculated = total > 0 
-      ? Math.max(1, Math.round((total * pct) / 100))
-      : Math.max(1, Math.round((250 * pct) / 100));
-    setAmount(calculated);
-    setCustomAmountStr(calculated.toString());
-  };
-
-  const handleCustomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCustomAmountStr(e.target.value);
-    const parsed = parseFloat(e.target.value);
-    if (!isNaN(parsed) && parsed > 0) {
-      setAmount(parsed);
+  const getExplorerUrl = () => {
+    if (selectedChain === 'solana') {
+      return `https://solscan.io/account/${targetAddress}`;
     }
+    if (selectedChain === 'bnb') {
+      return `https://bscscan.com/address/${targetAddress}`;
+    }
+    return `https://robinhoodchain.blockscout.com/address/${targetAddress}`;
   };
 
-  const handleDeposit = () => {
-    if (amount < 1.0) return;
-    setIsProcessing(true);
-
-    setTimeout(() => {
-      onConfirmDeposit(amount, selectedChain);
-      setIsProcessing(false);
-      
-      try {
-        confetti({
-          particleCount: 70,
-          spread: 60,
-          origin: { y: 0.6 },
-          colors: ['#D9F99D', '#f59e0b', '#a3e635'],
-        });
-      } catch {
-        // Ignore confetti if unsupported
-      }
-
-      onClose();
-    }, 600);
-  };
+  const confirmedChainBalance = selectedChain === 'solana'
+    ? `${vaultBalances?.sol.toFixed(4) || '0.0000'} SOL`
+    : selectedChain === 'bnb'
+    ? `${vaultBalances?.bnb.toFixed(4) || '0.0000'} BNB`
+    : `${vaultBalances?.eth.toFixed(4) || '0.0000'} ETH`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in font-mono">
@@ -136,34 +107,41 @@ export const DepositModal: React.FC<DepositModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                  {isLive ? 'Live Mainnet Vault Top-Up' : 'Sandbox Capital Allocation'}
+                  Deposit On-Chain Liquidity
                 </h2>
-                <span className={`px-1.5 py-0.5 rounded-sm text-[9px] font-bold uppercase tracking-wider ${
-                  isLive ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'bg-[#D9F99D]/15 text-[#D9F99D] border border-[#D9F99D]/30'
-                }`}>
-                  {isLive ? 'LIVE' : 'SANDBOX'}
+                <span className="px-1.5 py-0.5 rounded-sm text-[9px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  MAINNET ONLY
                 </span>
               </div>
               <p className="text-xs text-zinc-400">
-                {isLive 
-                  ? 'Credit liquid cash to your self-custody vault reserve for real autonomous execution.'
-                  : 'Allocate virtual paper funds to test multi-chain strategies in simulated sandbox mode.'}
+                Deposit funds directly on-chain. Top-ups require validator confirmation.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+            className="p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Strict On-Chain Protocol Notice */}
+        <div className="my-4 p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 text-xs flex items-start gap-2.5">
+          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-white">Strict On-Chain Confirmation Rule</p>
+            <p className="text-zinc-300 text-[11px] leading-relaxed">
+              Sandbox/simulated deposits are disabled. Capital is credited to your terminal reserve <strong>only when an on-chain transaction is verified by network RPC validators</strong>.
+            </p>
+          </div>
         </div>
 
         {/* Chain Selector */}
         <div className="space-y-4 my-4">
           <div>
             <label className="block text-[10px] uppercase tracking-widest text-zinc-400 mb-2">
-              TARGET EXECUTION CHAIN
+              SELECT TARGET BLOCKCHAIN
             </label>
             <div className="grid grid-cols-3 gap-2">
               {(['solana', 'bnb', 'robinhood'] as Chain[]).map((chain) => {
@@ -172,235 +150,114 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                   <button
                     key={chain}
                     type="button"
-                    onClick={() => setSelectedChain(chain)}
-                    className={`p-2.5 rounded-sm border text-left transition-all ${
+                    onClick={() => {
+                      setSelectedChain(chain);
+                      setSyncStatus(null);
+                    }}
+                    className={`p-2.5 rounded-sm border text-left transition-all cursor-pointer ${
                       selectedChain === chain
                         ? 'border-[#D9F99D] bg-[#D9F99D]/10 text-[#D9F99D]'
                         : 'border-white/10 bg-[#050505] text-zinc-400 hover:border-white/20'
                     }`}
                   >
                     <div className="text-xs font-bold">{chainConf.name}</div>
-                    <div className="text-[10px] text-zinc-500 mt-0.5">{chainConf.dex}</div>
+                    <div className="text-[10px] text-zinc-500 mt-0.5">{chainConf.nativeCoin}</div>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Mode Tabs */}
-          <div className="flex items-center gap-2 bg-[#050505] p-1 rounded-md border border-white/10 text-xs">
-            <button
-              type="button"
-              onClick={() => setDepositMode('connected_wallet')}
-              className={`flex-1 py-1.5 rounded-sm font-bold uppercase tracking-wider transition-colors ${
-                depositMode === 'connected_wallet'
-                  ? 'bg-[#D9F99D] text-black shadow-sm'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              {isLive ? 'Top-Up from Wallet' : 'Quick Presets'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setDepositMode('direct_transfer')}
-              className={`flex-1 py-1.5 rounded-sm font-bold uppercase tracking-wider transition-colors ${
-                depositMode === 'direct_transfer'
-                  ? 'bg-[#D9F99D] text-black shadow-sm'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              {isLive ? 'Direct On-Chain Address' : 'Custom Amount'}
-            </button>
-          </div>
+          {/* Target On-Chain Deposit Address Box */}
+          <div className="p-4 bg-[#050505] border border-[#D9F99D]/30 rounded-xl space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-zinc-400 text-[10px] uppercase font-semibold flex items-center gap-1.5">
+                <Cpu className="w-3.5 h-3.5 text-[#D9F99D]" />
+                Your Vault Deposit Address:
+              </span>
+              <span className="text-[#D9F99D] font-mono text-[11px] font-bold">
+                {currentChainConfig.name}
+              </span>
+            </div>
 
-          {/* Mode 1: Top-Up from Connected Wallet */}
-          {depositMode === 'connected_wallet' ? (
-            <div className="space-y-4">
-              {isLive && walletState?.isConnected && (
-                <div className="p-3 rounded-lg bg-[#050505] border border-[#D9F99D]/30 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-400 text-[10px] uppercase font-semibold">Connected Live Wallet:</span>
-                    <span className="text-[#D9F99D] font-mono font-bold">
-                      {walletState.walletProvider?.toUpperCase() || 'WALLET'} ({walletState.address.slice(0, 4)}...{walletState.address.slice(-4)})
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 pt-1 border-t border-white/5 text-[11px]">
-                    <div>
-                      <span className="text-zinc-500 block text-[9px]">SOL:</span>
-                      <strong className="text-white">{walletState.balances?.sol.toFixed(2)} SOL</strong>
-                    </div>
-                    <div>
-                      <span className="text-zinc-500 block text-[9px]">BNB:</span>
-                      <strong className="text-white">{walletState.balances?.bnb.toFixed(2)} BNB</strong>
-                    </div>
-                    <div>
-                      <span className="text-zinc-500 block text-[9px]">USDC/USDT:</span>
-                      <strong className="text-white">${walletState.balances?.usdc.toFixed(2)}</strong>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Wallet Percentage Shortcuts */}
-              {isLive && walletState?.isConnected && (
-                <div>
-                  <label className="block text-[10px] uppercase tracking-widest text-zinc-400 mb-2">
-                    ALLOCATE FROM WALLET BALANCE
-                  </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {[25, 50, 75, 100].map((pct) => (
-                      <button
-                        key={pct}
-                        type="button"
-                        onClick={() => handlePercentOfWallet(pct)}
-                        className="py-1.5 rounded-sm text-xs border border-white/10 bg-[#050505] text-zinc-300 hover:border-[#D9F99D]/40 hover:text-[#D9F99D] transition-all font-bold"
-                      >
-                        {pct === 100 ? 'MAX' : `${pct}%`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Presets */}
-              <div>
-                <label className="block text-[10px] uppercase tracking-widest text-zinc-400 mb-2">
-                  USD CAPITAL PRESETS
-                </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[25, 100, 500, 1000].map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => handlePreset(val)}
-                      className={`py-2 rounded-sm text-xs border transition-all ${
-                        amount === val
-                          ? 'border-[#D9F99D] bg-[#D9F99D]/15 text-[#D9F99D] font-bold'
-                          : 'border-white/10 bg-[#050505] text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      ${val.toLocaleString()}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Custom Input */}
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-[10px] uppercase tracking-widest text-zinc-400">
-                    AMOUNT TO TOP-UP (USD)
-                  </label>
-                  <span className="text-[10px] text-[#D9F99D] font-bold font-mono">
-                    $1.00 Min
-                  </span>
-                </div>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400 font-bold">
-                    $
-                  </span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="any"
-                    value={customAmountStr}
-                    onChange={handleCustomChange}
-                    placeholder="100.00"
-                    className="w-full bg-[#050505] border border-white/10 rounded-md pl-8 pr-3 py-2 text-sm text-white focus:outline-none focus:border-[#D9F99D]/60 font-mono font-bold"
-                  />
-                </div>
-                {amount > 0 && amount < 1.0 && (
-                  <p className="text-[10px] text-amber-400 mt-1">Minimum vault deposit is $1.00 USD.</p>
-                )}
-              </div>
-
-              {/* Action Button */}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                readOnly
+                value={targetAddress}
+                className="flex-1 bg-black/70 border border-white/10 rounded-md px-3 py-2 text-xs font-mono text-white select-all focus:outline-none focus:border-[#D9F99D]"
+              />
               <button
-                id="btn-confirm-topup"
-                onClick={handleDeposit}
-                disabled={isProcessing || amount < 1.0}
-                className="w-full py-3 rounded-sm text-xs font-black uppercase tracking-wider bg-[#D9F99D] text-black hover:bg-[#bef264] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm cursor-pointer"
+                type="button"
+                onClick={handleCopyAddress}
+                className="px-3.5 py-2 rounded-md bg-[#D9F99D] hover:bg-[#bef264] text-black transition-colors text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
               >
-                {isProcessing ? (
-                  <span>Crediting ${amount.toLocaleString()} USD to Reserve...</span>
-                ) : (
-                  <>
-                    <Wallet className="w-4 h-4 text-black" />
-                    <span>Confirm ${amount.toLocaleString()} USD Vault Top-Up</span>
-                  </>
-                )}
+                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copied ? 'Copied' : 'Copy'}</span>
               </button>
             </div>
-          ) : (
-            /* Mode 2: Direct On-Chain Address */
-            <div className="space-y-4">
-              <div className="p-3.5 rounded-lg bg-[#050505] border border-white/10 space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-400 text-[10px] uppercase">
-                    SELF-CUSTODIAL VAULT {selectedChain === 'solana' ? 'SOLANA' : 'EVM'} ADDRESS
-                  </span>
-                  <span className="text-[10px] text-[#D9F99D] font-mono">100% PRIVATE KEYS IN RAM</span>
-                </div>
 
-                <div className="flex items-center gap-2 p-2.5 bg-[#0A0A0A] border border-white/10 rounded font-mono text-xs text-zinc-300 break-all select-all">
-                  <span className="flex-1 text-[11px]">{targetAddress}</span>
-                  <button
-                    type="button"
-                    onClick={handleCopyAddress}
-                    className="p-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors shrink-0 cursor-pointer"
-                    title="Copy Address"
-                  >
-                    {copied ? <Check className="w-4 h-4 text-[#D9F99D]" /> : <Copy className="w-4 h-4" />}
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-1">
-                  <a
-                    href={`${CHAINS_CONFIG[selectedChain].explorerUrl}/address/${targetAddress}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1 text-[#D9F99D] hover:underline"
-                  >
-                    <span>View on {CHAINS_CONFIG[selectedChain].name} Explorer</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              </div>
-
-              {/* RPC Sync Check */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCheckOnChainSync}
-                  disabled={isCheckingOnChain}
-                  className="flex-1 py-2 rounded-sm text-xs font-bold uppercase tracking-wider bg-[#0A0A0A] border border-[#D9F99D]/40 text-[#D9F99D] hover:bg-[#D9F99D]/10 transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isCheckingOnChain ? 'animate-spin text-[#D9F99D]' : ''}`} />
-                  <span>{isCheckingOnChain ? 'Querying Mainnet RPC...' : 'Check & Sync Incoming Deposit'}</span>
-                </button>
-              </div>
-
-              {syncMessage && (
-                <div className="p-2.5 rounded bg-[#0A0A0A] border border-[#D9F99D]/20 text-[11px] text-[#D9F99D]">
-                  {syncMessage}
-                </div>
-              )}
+            <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[11px]">
+              <span className="text-zinc-400">Confirmed On-Chain Balance:</span>
+              <span className="text-[#D9F99D] font-bold font-mono">
+                {confirmedChainBalance}
+              </span>
             </div>
-          )}
 
-          {/* Security & Vault Guarantee */}
-          <div className="p-3 rounded-md bg-[#050505] border border-white/5 text-xs text-zinc-400 space-y-1.5">
-            <div className="flex items-center gap-1.5 text-[#D9F99D] font-bold">
-              <ShieldCheck className="w-4 h-4 text-[#D9F99D]" />
-              <span>Multi-Chain MEV Defense & Isolated Capital Reserve</span>
+            <div className="flex items-center justify-between text-[10px] text-zinc-500 pt-1">
+              <span>Send native {currentChainConfig.nativeCoin} from your external wallet or exchange.</span>
+              <a
+                href={getExplorerUrl()}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#D9F99D] hover:underline flex items-center gap-1 font-bold"
+              >
+                <span>View On Explorer</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
-            <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Deposited funds are held strictly within your self-custodial multi-chain vault reserve. Automated orders execute with an absolute $1.00 USD minimum floor and instant anti-rug protection.
-            </p>
           </div>
+
+          {/* Real-Time On-Chain Confirmation Checker */}
+          <div className="p-3 bg-zinc-900/40 border border-white/5 rounded-lg space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold flex items-center gap-1.5">
+                <Layers className="w-3 h-3 text-[#D9F99D]" />
+                Helius + QuickNode On-Chain Verification
+              </span>
+              <button
+                type="button"
+                onClick={handleCheckOnChainSync}
+                disabled={isCheckingOnChain}
+                className="text-xs text-[#D9F99D] hover:underline flex items-center gap-1 cursor-pointer font-bold disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isCheckingOnChain ? 'animate-spin' : ''}`} />
+                <span>{isCheckingOnChain ? 'Querying Helius / QuickNode...' : 'Check Confirmation'}</span>
+              </button>
+            </div>
+
+            {syncStatus ? (
+              <div className="text-[11px] font-mono text-zinc-300 bg-black/40 p-2 rounded border border-white/5">
+                <p>{syncStatus.text}</p>
+                <p className="text-[9px] text-zinc-500 mt-1">Checked at {syncStatus.timestamp} • Automated trading primed</p>
+              </div>
+            ) : (
+              <p className="text-[10px] text-zinc-400 leading-relaxed">
+                The terminal continuously polls Helius (Solana) & QuickNode (EVM) validator RPCs every second. Once your deposit confirms on-chain, liquidity syncs directly to the UI and triggers the automated trading engine.
+              </p>
+            )}
+          </div>
+
+          {/* Close Action */}
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-3 rounded-md bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+          >
+            Close Deposit Window
+          </button>
         </div>
       </div>
     </div>
   );
 };
-

@@ -624,6 +624,59 @@ export const VaultStrategyModal: React.FC<VaultStrategyModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Dedicated Helius & QuickNode Confirmation RPCs */}
+              <div className="p-3.5 rounded-lg bg-[#050505] border border-[#D9F99D]/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-widest text-[#D9F99D] font-bold flex items-center gap-1.5">
+                    <Radio className="w-3.5 h-3.5 text-[#D9F99D]" />
+                    CONFIRMATION RPCS (HELIUS + QUICKNODE)
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                    1S SYNC READY
+                  </span>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <div>
+                    <label className="text-zinc-400 text-[10px] block mb-1">
+                      Helius Solana Validator RPC:
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.customRpc?.solana || 'https://mainnet.helius-rpc.com/?api-key=public'}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        customRpc: {
+                          ...formData.customRpc,
+                          solana: e.target.value,
+                        }
+                      })}
+                      placeholder="https://mainnet.helius-rpc.com/?api-key=..."
+                      className="w-full bg-[#0A0A0A] border border-white/10 rounded px-2.5 py-1.5 text-white font-mono text-[11px] focus:outline-none focus:border-[#D9F99D]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-zinc-400 text-[10px] block mb-1">
+                      QuickNode EVM Validator RPC (BSC):
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.customRpc?.bnb || 'https://bsc.quiknode.pro/'}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        customRpc: {
+                          ...formData.customRpc,
+                          bnb: e.target.value,
+                        }
+                      })}
+                      placeholder="https://bsc.quiknode.pro/ or custom QuickNode URL..."
+                      className="w-full bg-[#0A0A0A] border border-white/10 rounded px-2.5 py-1.5 text-white font-mono text-[11px] focus:outline-none focus:border-[#D9F99D]"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

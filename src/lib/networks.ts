@@ -104,6 +104,9 @@ export const robinhoodChainViem = defineChain({
   },
 });
 
+export const bscChain = bscViem;
+export const robinhoodChain = robinhoodChainViem;
+
 // Singleton Viem public client for Robinhood Chain
 export const robinhoodPublicClient = createPublicClient({
   chain: robinhoodChainViem,

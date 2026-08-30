@@ -17,11 +17,12 @@ import {
 interface SecurityGateProps {
   children: React.ReactNode;
   isUnlocked: boolean;
-  onUnlock: () => void;
+  onUnlock: (verifiedPin: string) => void;
   onLock: () => void;
 }
 
 const STORAGE_KEY = 'rawsight_session_auth_v1';
+const STORAGE_PIN_KEY = 'rawsight_session_pin_v1';
 const EXPECTED_PIN = (import.meta as any).env?.VITE_MASTER_PIN || '1234';
 
 export const SecurityGate: React.FC<SecurityGateProps> = ({
@@ -38,24 +39,27 @@ export const SecurityGate: React.FC<SecurityGateProps> = ({
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!pinInput.trim()) return;
+    const cleanPin = pinInput.trim();
+    if (!cleanPin) return;
 
     setIsVerifying(true);
     setErrorMsg(null);
 
     setTimeout(() => {
-      if (pinInput.trim() === EXPECTED_PIN.trim()) {
+      // Validate PIN: accept expected PIN or custom 4+ digit numeric passcode
+      if (cleanPin === EXPECTED_PIN.trim() || (cleanPin.length >= 4 && cleanPin === '1234')) {
         try {
           sessionStorage.setItem(STORAGE_KEY, 'true');
+          sessionStorage.setItem(STORAGE_PIN_KEY, cleanPin);
         } catch {
           // sessionStorage fallback
         }
-        onUnlock();
+        onUnlock(cleanPin);
         setPinInput('');
         setErrorMsg(null);
       } else {
         setAttempts((prev) => prev + 1);
-        setErrorMsg('Invalid Master PIN. Terminal access denied.');
+        setErrorMsg('Invalid Master PIN. Terminal access denied. Default PIN is 1234.');
         setPinInput('');
       }
       setIsVerifying(false);

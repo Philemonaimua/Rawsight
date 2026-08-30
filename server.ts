@@ -4,6 +4,8 @@ import path from 'path';
 import { WebSocketServer } from 'ws';
 import { createServer as createViteServer } from 'vite';
 import { worker } from './src/server/worker';
+import { requireAuth, AuthRequest } from './src/middleware/auth.ts';
+import { getOrCreateUser, getUserVaultConfig, upsertUserVaultConfig, getUserPositions, getUserTradeLogs } from './src/db/queries.ts';
 
 async function startServer() {
   const app = express();
@@ -23,7 +25,6 @@ async function startServer() {
   });
 
   wss.on('error', (err) => {
-    // Graceful error logging for WebSocket server
     console.warn('[WS Server] Notice:', err?.message || err);
   });
 
@@ -34,6 +35,7 @@ async function startServer() {
       timestamp: Date.now(),
       engine: 'Rawsight Autonomous Multi-Chain Trading Worker v2.5',
       uptimeSeconds: process.uptime(),
+      cloudSql: Boolean(process.env.SQL_HOST),
     });
   });
 
@@ -47,6 +49,48 @@ async function startServer() {
       worker.syncFromClient(mode, data);
     }
     res.json({ success: true, timestamp: Date.now() });
+  });
+
+  // Authenticated Cloud SQL User & State APIs
+  app.post('/api/user/sync', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const uid = req.user?.uid;
+      const email = req.user?.email || 'user@rawsight.internal';
+      const displayName = req.user?.name || '';
+      if (!uid) {
+        return res.status(400).json({ error: 'Missing UID in authenticated token' });
+      }
+
+      const user = await getOrCreateUser(uid, email, displayName);
+      const config = await getUserVaultConfig(user.id);
+      const positions = await getUserPositions(user.id);
+      const logs = await getUserTradeLogs(user.id);
+
+      res.json({
+        user,
+        config,
+        positions,
+        logs,
+      });
+    } catch (error: any) {
+      console.error('Failed to sync user state with Cloud SQL:', error);
+      res.status(500).json({ error: error.message || 'Internal database error' });
+    }
+  });
+
+  app.post('/api/user/config', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const uid = req.user?.uid;
+      const email = req.user?.email || 'user@rawsight.internal';
+      if (!uid) return res.status(400).json({ error: 'Missing UID' });
+
+      const user = await getOrCreateUser(uid, email);
+      const updated = await upsertUserVaultConfig(user.id, req.body);
+      res.json({ success: true, config: updated });
+    } catch (error: any) {
+      console.error('Failed to update config in Cloud SQL:', error);
+      res.status(500).json({ error: error.message || 'Failed to update config' });
+    }
   });
 
   // Vite middleware for development / static serving in production
