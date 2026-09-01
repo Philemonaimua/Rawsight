@@ -1,10 +1,19 @@
 @import "tailwindcss";
 
 @layer base {
+  :root {
+    --bg-main: #050505;
+    --bg-card: #0A0A0A;
+    --text-main: #D9F99D;
+    --text-contrast: #FFFFFF;
+    --border-main: rgba(217, 249, 157, 0.25);
+  }
+
   body {
     background-color: #050505;
     color: #D9F99D;
     font-family: 'JetBrains Mono', monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 
   .font-mono {
@@ -16,23 +25,141 @@
   }
 }
 
+/* Light mode theme styling */
+.light {
+  color-scheme: light;
+}
+
+body.light-theme,
+.light {
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
+}
+
+/* Light mode overrides for terminal components */
+.light .bg-\[\#050505\] {
+  background-color: #F1F5F9 !important;
+}
+
+.light .bg-\[\#0A0A0A\] {
+  background-color: #FFFFFF !important;
+}
+
+.light .bg-\[\#080505\] {
+  background-color: #FEF2F2 !important;
+}
+
+.light .text-white {
+  color: #0F172A !important;
+}
+
+.light .text-zinc-400 {
+  color: #475569 !important;
+}
+
+.light .text-zinc-500 {
+  color: #64748B !important;
+}
+
+.light .text-zinc-300 {
+  color: #1E293B !important;
+}
+
+.light .text-zinc-200 {
+  color: #0F172A !important;
+}
+
+.light .text-zinc-600 {
+  color: #94A3B8 !important;
+}
+
+.light .border-white\/5,
+.light .border-white\/10,
+.light .border-white\/20 {
+  border-color: #E2E8F0 !important;
+}
+
+.light .border-\[\#D9F99D\]\/20,
+.light .border-\[\#D9F99D\]\/30,
+.light .border-\[\#D9F99D\]\/40,
+.light .border-\[\#D9F99D\]\/50 {
+  border-color: rgba(22, 163, 74, 0.4) !important;
+}
+
+.light .bg-\[\#D9F99D\]\/10,
+.light .bg-\[\#D9F99D\]\/15,
+.light .bg-\[\#D9F99D\]\/20 {
+  background-color: #DCFCE7 !important;
+}
+
+.light .text-\[\#D9F99D\] {
+  color: #15803D !important;
+}
+
+.light .bg-\[\#D9F99D\] {
+  background-color: #16A34A !important;
+  color: #FFFFFF !important;
+}
+
+.light .bg-\[\#D9F99D\] svg {
+  color: #FFFFFF !important;
+  fill: #FFFFFF !important;
+}
+
+.light .hover\:bg-\[\#bef264\]:hover {
+  background-color: #15803D !important;
+}
+
+.light .bg-zinc-950,
+.light .bg-zinc-950\/80,
+.light .bg-zinc-950\/60,
+.light .bg-zinc-900 {
+  background-color: #F8FAFC !important;
+}
+
+.light .border-zinc-800 {
+  border-color: #E2E8F0 !important;
+}
+
+.light header.sticky {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-color: #E2E8F0 !important;
+}
+
+.light .shadow-2xl,
+.light .shadow-xl {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
+}
+
 /* Bento custom subtle scrollbar */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
   background: #050505;
 }
 
+.light ::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+
 ::-webkit-scrollbar-thumb {
-  background: rgba(217, 249, 157, 0.2);
-  border-radius: 2px;
+  background: rgba(217, 249, 157, 0.25);
+  border-radius: 3px;
+}
+
+.light ::-webkit-scrollbar-thumb {
+  background: rgba(22, 163, 74, 0.35);
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: #D9F99D;
+}
+
+.light ::-webkit-scrollbar-thumb:hover {
+  background: #16A34A;
 }
 
 /* Bento Lime glow terminal accents */
@@ -42,6 +169,10 @@
 
 .glow-lime-sm {
   box-shadow: 0 0 10px -2px rgba(217, 249, 157, 0.25);
+}
+
+.light .glow-lime {
+  box-shadow: 0 0 20px -3px rgba(22, 163, 74, 0.2);
 }
 
 .glow-green {
@@ -73,5 +204,3 @@
 .animate-radar {
   animation: radar-sweep 4s linear infinite;
 }
-
-

@@ -12,7 +12,9 @@ import {
   Crosshair,
   ShieldAlert,
   Layers,
-  Radio
+  Radio,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { Chain, LiveWalletState, TradingMode, ValidatorSyncTelemetry } from '../types';
 import { CHAINS_CONFIG } from '../data/mockTokens';
@@ -22,6 +24,8 @@ interface NavbarProps {
   onToggleAutoTrade: () => void;
   audioAlerts: boolean;
   onToggleAudio: () => void;
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
   onOpenDeposit: () => void;
   onOpenStrategy: () => void;
   onOpenStrategyTab?: (tab: 'sizing' | 'execution' | 'scrutiny') => void;
@@ -38,6 +42,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleAutoTrade,
   audioAlerts,
   onToggleAudio,
+  theme = 'dark',
+  onToggleTheme,
   onOpenDeposit,
   onOpenStrategy,
   onOpenStrategyTab,
@@ -57,7 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-[#D9F99D]/20 bg-[#050505]/95 backdrop-blur-md font-mono">
+    <header className="sticky top-0 z-40 w-full border-b border-[#D9F99D]/20 bg-[#050505]/95 backdrop-blur-md font-mono transition-colors duration-200">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 sm:h-18 flex items-center justify-between gap-2 sm:gap-4">
         {/* Brand & Mode Toggle */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -149,6 +155,22 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Controls & Actions */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Stylish Light/Dark Mode Toggle */}
+          {onToggleTheme && (
+            <button
+              id="btn-toggle-theme"
+              onClick={onToggleTheme}
+              title={theme === 'dark' ? 'Switch to Light Mode Terminal' : 'Switch to Dark Mode Terminal'}
+              className="flex items-center justify-center p-2.5 min-h-[44px] min-w-[44px] rounded-md border text-xs transition-all cursor-pointer border-[#D9F99D]/40 bg-[#D9F99D]/10 text-[#D9F99D] hover:bg-[#D9F99D]/20 shadow-sm"
+            >
+              {theme === 'dark' ? (
+                <Sun className="w-4 h-4 text-amber-300 hover:rotate-45 transition-transform" />
+              ) : (
+                <Moon className="w-4 h-4 text-emerald-800 hover:-rotate-12 transition-transform" />
+              )}
+            </button>
+          )}
+
           {/* Audio Chime Toggle */}
           <button
             id="btn-toggle-audio"

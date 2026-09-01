@@ -179,6 +179,43 @@ export default function App() {
   };
 
   // State Declarations
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try {
+      const stored = localStorage.getItem('rawsight_theme');
+      if (stored === 'light' || stored === 'dark') return stored;
+      return 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  const handleToggleTheme = () => {
+    setTheme(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem('rawsight_theme', next);
+        if (next === 'light') {
+          document.documentElement.classList.add('light');
+          document.body.classList.add('light-theme');
+        } else {
+          document.documentElement.classList.remove('light');
+          document.body.classList.remove('light-theme');
+        }
+      } catch {}
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.classList.add('light');
+      document.body.classList.add('light-theme');
+    } else {
+      document.documentElement.classList.remove('light');
+      document.body.classList.remove('light-theme');
+    }
+  }, [theme]);
+
   const [config, setConfig] = useState<VaultConfig>(INITIAL_CONFIG);
   const [positions, setPositions] = useState<TradePosition[]>([]);
   const [radarTokens, setRadarTokens] = useState<MemeToken[]>(INITIAL_MEME_RADAR);
@@ -413,26 +450,62 @@ export default function App() {
     historicalCurve: chartData,
   };
 
-  // Live DEX Screener Manual Scan Trigger
-  const handleTriggerManualScan = useCallback(async () => {
-    setIsScanning(true);
+  // Live DEX Screener Continuous Sync & Manual Trigger
+  const fetchAndSyncLiveDexTokens = useCallback(async () => {
     try {
       const freshTokens = await fetchLiveDexScreenerTokens();
       if (freshTokens && freshTokens.length > 0) {
         setRadarTokens(freshTokens);
       }
-      await syncVaultBalances();
+    } catch (e) {
+      console.warn('Live DEX token sync notice:', e);
+    }
+  }, []);
+
+  const handleTriggerManualScan = useCallback(async () => {
+    setIsScanning(true);
+    try {
+      await Promise.all([
+        fetchAndSyncLiveDexTokens(),
+        discoveryEngine.forceRefreshLiveTokens().then(tokens => setEarlyTokens(tokens)),
+        syncVaultBalances(),
+      ]);
     } catch (e) {
       console.error('Scan failed:', e);
     } finally {
       setIsScanning(false);
     }
-  }, [syncVaultBalances]);
+  }, [fetchAndSyncLiveDexTokens, syncVaultBalances]);
 
-  // Token discovery listener updates
+  // Initial and continuous 6-second live DEX data synchronization
   useEffect(() => {
-    const unsubTokens = discoveryEngine.subscribe(() => {
+    fetchAndSyncLiveDexTokens();
+    const liveDexInterval = setInterval(() => {
+      fetchAndSyncLiveDexTokens();
+    }, 6000);
+    return () => clearInterval(liveDexInterval);
+  }, [fetchAndSyncLiveDexTokens]);
+
+  // Token discovery listener updates & terminal log stream
+  useEffect(() => {
+    const unsubTokens = discoveryEngine.subscribe((newToken) => {
       setEarlyTokens(discoveryEngine.getBalancedTokens());
+      if (newToken) {
+        const isPreGrad = newToken.stage === 'pre-graduation' || (newToken.bondingCurveProgress !== undefined && newToken.bondingCurveProgress < 100);
+        const curveLabel = isPreGrad ? `Bonding Curve ${newToken.bondingCurveProgress || 50}%` : 'DEX Liquidity Pool';
+        const discLog: TradeLog = {
+          id: `log-disc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          timestamp: Date.now(),
+          type: 'DISCOVERY',
+          tokenSymbol: newToken.symbol,
+          tokenName: newToken.name,
+          chain: newToken.chain,
+          amountUsd: newToken.mcap,
+          note: `Live On-Chain Discovery: ${newToken.symbol} detected on ${newToken.launchSource} (${curveLabel}). Scrutiny: ${newToken.scrutinyStatus}. Alpha Score: ${newToken.smartMoneyScore}/100.`,
+          txHash: newToken.contractAddress,
+        };
+        setLogs(prev => [discLog, ...prev.slice(0, 49)]);
+      }
     });
     const unsubStatus = discoveryEngine.subscribeStatus((listeners) => {
       setWsListeners(listeners);
@@ -529,8 +602,8 @@ export default function App() {
     setIsSnipeModalOpen(true);
   };
 
-  // Execution of Snipe
-  const executeSnipe = async (token: MemeToken, customAmountUsd: number) => {
+  // Execution of Snipe (Supports automated snipes and manual buys beyond 6 slots)
+  const executeSnipe = async (token: MemeToken, customAmountUsd: number, isManualBuy: boolean = false) => {
     const size = Math.max(1.0, customAmountUsd);
     if (effectiveCash < size && config.tradingMode === 'LIVE_MAINNET') {
       alert(`Insufficient cash balance ($${effectiveCash.toFixed(2)}) for $${size.toFixed(2)} snipe.`);
@@ -539,10 +612,11 @@ export default function App() {
 
     if (config.audioAlerts) playSnipeSound();
 
+    const currentSlot = positions.length + 1;
     const txHash = `0x${Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
     if (config.tradingMode === 'LIVE_MAINNET') {
       setLastTxAlert({
-        message: `Snipe order broadcast on ${token.chain.toUpperCase()}: ${token.symbol} (${token.name})`,
+        message: `${isManualBuy ? `[Manual Buy Slot ${currentSlot}]` : `[Auto-Snipe Slot ${currentSlot}]`} Broadcast on ${token.chain.toUpperCase()}: ${token.symbol} (${token.name})`,
         url: getBlockExplorerTxUrl(token.chain, txHash),
       });
     }
@@ -565,6 +639,8 @@ export default function App() {
       stopLossTargetPercent: config.stopLossPercent,
       status: 'ACTIVE',
       txHash,
+      isManualBuy,
+      slotNumber: currentSlot,
     };
 
     setPositions(p => [newPos, ...p]);
@@ -578,7 +654,7 @@ export default function App() {
       tokenName: token.name,
       chain: token.chain,
       amountUsd: size,
-      note: `Executed autonomous snipe for $${size.toFixed(2)} at $${tokenPrice < 0.01 ? tokenPrice.toExponential(3) : tokenPrice.toFixed(4)}. Direct on-chain liquidity routing verified via Helius (Solana) / QuickNode (EVM).`,
+      note: `${isManualBuy ? `Manual user buy (Slot #${currentSlot})` : `Autonomous snipe (Slot #${currentSlot})`} executed for $${size.toFixed(2)} at $${tokenPrice < 0.01 ? tokenPrice.toExponential(3) : tokenPrice.toFixed(4)}. On-chain routing verified via Helius (Solana) / QuickNode (EVM).`,
       txHash,
     };
 
@@ -587,11 +663,11 @@ export default function App() {
     setSnipeCandidateToken(null);
   };
 
-  // Autonomous Trade Deployment Once Balances Sync
+  // Autonomous Trade Deployment Once Balances Sync (Enforces 6-slot limit for auto-sniping)
   useEffect(() => {
     if (!config.autoTradeEnabled) return;
     
-    // Check if vault has synced balance and capacity for new positions
+    // Check if vault has synced balance and capacity for new automated positions
     const minSize = Math.max(1.0, config.minTradeSizeUsd || 1.0);
     if (effectiveCash < minSize) return;
     if (positions.length >= config.maxActivePositions) return;
@@ -599,7 +675,7 @@ export default function App() {
     // Check if allowed chains are enabled
     const activeAddresses = new Set(positions.map(p => p.token.contractAddress.toLowerCase()));
     
-    // Combine radar tokens and early launchpad tokens
+    // Combine radar tokens and early launchpad tokens sorted lowest market cap to highest
     const candidates = [
       ...radarTokens.filter(t => t.scrutinyStatus === 'PASSED_RAWSIGHT' && config.allowedChains[t.chain]),
       ...earlyTokens.filter(t => t.isHoneypotSafe && config.allowedChains[t.chain]),
@@ -611,8 +687,8 @@ export default function App() {
       // Re-check conditions inside timeout
       if (effectiveCash < minSize || positions.length >= config.maxActivePositions) return;
 
-      // Select top candidate with highest scrutiny score / lowest risk
-      const selected = candidates.sort((a, b) => (a.rugRiskScore || 0) - (b.rugRiskScore || 0))[0];
+      // Select candidate with lowest market cap that passed security
+      const selected = candidates.sort((a, b) => (a.mcap || 0) - (b.mcap || 0))[0];
       if (!selected) return;
 
       // Compute position sizing according to strategy rules ($1.00 USD min floor)
@@ -631,7 +707,7 @@ export default function App() {
       tradeSize = Math.min(tradeSize, config.maxTradeSizeUsd, effectiveCash);
 
       if (tradeSize >= minSize) {
-        executeSnipe(selected, tradeSize);
+        executeSnipe(selected, tradeSize, false);
       }
     }, 4500);
 
@@ -666,9 +742,11 @@ export default function App() {
 
   return (
     <SecurityGate isUnlocked={isUnlocked} onUnlock={handleUnlock} onLock={handleLock}>
-      <div className="min-h-screen bg-[#050505] text-zinc-200 font-mono flex flex-col selection:bg-[#D9F99D] selection:text-black">
+      <div className={`min-h-screen ${theme === 'dark' ? 'dark bg-[#050505] text-zinc-200' : 'light bg-[#F8FAFC] text-slate-900'} font-mono flex flex-col selection:bg-[#D9F99D] selection:text-black transition-colors duration-200`}>
         {/* Navigation Bar */}
         <Navbar
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
           autoTradeEnabled={config.autoTradeEnabled}
           onToggleAutoTrade={() => setConfig(c => ({ ...c, autoTradeEnabled: !c.autoTradeEnabled }))}
           audioAlerts={config.audioAlerts}
@@ -807,6 +885,11 @@ export default function App() {
             positions={positions}
             onManualClose={(id) => closePosition(id, 'CLOSED_MANUAL')}
             takeProfitTargetPercent={config.takeProfitPercent}
+            onAddManualBuy={() => {
+              const candidate = earlyTokens[0] || radarTokens[0];
+              if (candidate) handleOpenSnipeModal(candidate);
+            }}
+            maxAutoSlots={config.maxActivePositions || 6}
           />
 
           {/* 3. Performance Chart & Equity Curve */}
@@ -898,7 +981,8 @@ export default function App() {
           vaultConfig={config}
           cashBalanceUsd={effectiveCash}
           totalNavUsd={totalNav}
-          onExecuteSnipe={(token, customAmountUsd) => executeSnipe(token, customAmountUsd)}
+          activePositionsCount={positions.length}
+          onExecuteSnipe={(token, customAmountUsd, isManual) => executeSnipe(token, customAmountUsd, isManual ?? true)}
         />
 
         {/* Non-Custodial Multi-Chain Vault Keys Modal */}

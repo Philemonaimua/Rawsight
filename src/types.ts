@@ -64,7 +64,7 @@ export interface EarlyLaunchToken extends MemeToken {
   bondingCurveProgress?: number; // 0-100%
   pairAddress?: string;
   routerAddress?: string;
-  liquidityLockStatus: '100% Burned' | 'PinkLock 365d' | 'Locked Team' | 'Unlocked (High Risk)';
+  liquidityLockStatus: '100% Burned' | 'PinkLock 365d' | 'Locked Team' | 'Unlocked (High Risk)' | string;
   taxBuySell: string; // e.g. "0% / 0%" or "5% / 5% (Warning)"
   isHoneypotSafe: boolean;
   ownershipRenounced: boolean;
@@ -172,6 +172,8 @@ export interface TradePosition {
   txHash?: string;
   trailingStopActive?: boolean;
   rugShieldTriggered?: boolean;
+  isManualBuy?: boolean;
+  slotNumber?: number;
 }
 
 export type LogType = 
@@ -186,7 +188,8 @@ export type LogType =
   | 'WITHDRAW'
   | 'WALLET_CONNECT'
   | 'MODE_SWITCH'
-  | 'STRATEGY_UPDATE';
+  | 'STRATEGY_UPDATE'
+  | 'DISCOVERY';
 
 export interface TradeLog {
   id: string;

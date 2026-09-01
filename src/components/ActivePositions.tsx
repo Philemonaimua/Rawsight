@@ -20,12 +20,16 @@ interface ActivePositionsProps {
   positions: TradePosition[];
   onManualClose: (positionId: string) => void;
   takeProfitTargetPercent: number;
+  onAddManualBuy?: () => void;
+  maxAutoSlots?: number;
 }
 
 export const ActivePositions: React.FC<ActivePositionsProps> = ({
   positions,
   onManualClose,
   takeProfitTargetPercent,
+  onAddManualBuy,
+  maxAutoSlots = 6,
 }) => {
   const [copiedCa, setCopiedCa] = useState<string | null>(null);
 
@@ -35,6 +39,8 @@ export const ActivePositions: React.FC<ActivePositionsProps> = ({
     setCopiedCa(ca);
     setTimeout(() => setCopiedCa(null), 1800);
   };
+
+  const isAutoCapacityFilled = positions.length >= maxAutoSlots;
 
   return (
     <div className="bg-[#0A0A0A] border border-[#D9F99D]/30 rounded-xl p-4 sm:p-5 mb-6 font-mono">
@@ -52,19 +58,34 @@ export const ActivePositions: React.FC<ActivePositionsProps> = ({
               <span className="px-2 py-0.5 rounded-sm text-[10px] font-bold uppercase tracking-widest bg-[#D9F99D]/10 text-[#D9F99D] border border-[#D9F99D]/30">
                 {positions.length} ACTIVE POSITIONS
               </span>
+              {isAutoCapacityFilled && (
+                <span className="px-2 py-0.5 rounded-sm text-[10px] font-bold uppercase tracking-widest bg-emerald-950/60 text-emerald-300 border border-emerald-500/40">
+                  {maxAutoSlots}/{maxAutoSlots} AUTO SLOTS FILLED • MANUAL BUY OPEN
+                </span>
+              )}
             </div>
             <p className="text-xs text-zinc-400">
-              Autonomous execution continuously monitors price velocity, LP drain vectors, and take-profit limits.
+              Autonomous execution tracks up to {maxAutoSlots} slots. Manual memecoin buys can be added anytime.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {onAddManualBuy && (
+            <button
+              onClick={onAddManualBuy}
+              className="px-3 py-1.5 min-h-[44px] rounded-md border border-[#D9F99D]/50 text-xs font-bold uppercase tracking-wider text-black bg-[#D9F99D] hover:bg-[#bef264] transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-[#D9F99D]/10"
+              title="Add a manual memecoin buy beyond automated slots"
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+              <span>+ Add Manual Buy</span>
+            </button>
+          )}
           <span className="px-2 py-1 rounded-sm border border-[#D9F99D]/30 text-[9px] uppercase tracking-wider text-[#D9F99D] bg-[#D9F99D]/5">
             TP: +{takeProfitTargetPercent}%
           </span>
           <span className="px-2 py-1 rounded-sm border border-[#D9F99D]/30 text-[9px] uppercase tracking-wider text-[#D9F99D] bg-[#D9F99D]/5">
-            SL: INSIDER_SCAN
+            LP FILTER: ≥80%
           </span>
         </div>
       </div>
@@ -76,21 +97,23 @@ export const ActivePositions: React.FC<ActivePositionsProps> = ({
             <Crosshair className="w-6 h-6" />
           </div>
           <h3 className="text-xs uppercase tracking-widest font-bold text-zinc-300">
-            Vault Standing By • Scanning Multi-Chain Pools
+            Vault Standing By • Scanning Multi-Chain Pools (Lowest to Highest MCAP)
           </h3>
           <p className="text-xs text-zinc-500 max-w-md mx-auto mt-1">
-            The Rawsight bot is filtering fresh pools on Solana, BNB Chain, and Robinhood Chain. Safe high-target entries will automatically appear here.
+            The scanner arranges meme discoveries from lowest market cap to highest with LP locked ≥80%. Up to 6 automated slots execute automatically, and manual buys can be initiated at any time.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-          {positions.map((pos) => {
+          {positions.map((pos, idx) => {
             const chainConfig = CHAINS_CONFIG[pos.chain];
             const isProfit = pos.currentPnlPercent >= 0;
             const progressToTp = Math.min(
               100,
               Math.max(0, (pos.currentPnlPercent / pos.takeProfitTargetPercent) * 100)
             );
+            const slotNum = pos.slotNumber || (positions.length - idx);
+            const isManual = pos.isManualBuy || slotNum > maxAutoSlots;
 
             return (
               <div
@@ -108,6 +131,15 @@ export const ActivePositions: React.FC<ActivePositionsProps> = ({
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-bold text-white text-base tracking-tight">
                             {pos.token.symbol}
+                          </span>
+
+                          {/* Slot Badge */}
+                          <span className={`px-1.5 py-0.5 rounded-sm text-[9px] uppercase tracking-wider font-bold border ${
+                            isManual 
+                              ? 'bg-amber-950/60 text-amber-300 border-amber-500/40' 
+                              : 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40'
+                          }`}>
+                            {isManual ? `Slot ${slotNum} (Manual Buy)` : `Slot ${slotNum}/6 (Auto)`}
                           </span>
 
                           {/* CA Badge beside token */}
@@ -142,7 +174,7 @@ export const ActivePositions: React.FC<ActivePositionsProps> = ({
                           </div>
 
                           <span className="px-1.5 py-0.5 rounded-sm text-[9px] uppercase tracking-wider border border-[#D9F99D]/30 bg-[#D9F99D]/10 text-[#D9F99D]">
-                            {chainConfig.name}
+                            {chainConfig?.name || pos.chain.toUpperCase()}
                           </span>
                         </div>
                         <p className="text-xs text-zinc-400 truncate max-w-[260px]">
@@ -231,7 +263,7 @@ export const ActivePositions: React.FC<ActivePositionsProps> = ({
                 <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2 text-[10px] text-zinc-400">
                   <div className="flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#D9F99D] animate-pulse" />
-                    <span>Monitoring Order Execution</span>
+                    <span>{isManual ? 'Manual Order Guarded' : 'Autonomous Order Guarded'}</span>
                   </div>
                   <div className="font-mono text-zinc-500 text-[9px]">
                     Position ID: #{pos.id.slice(-6)}

@@ -11,7 +11,8 @@ import {
   Filter,
   Trash2,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Radio
 } from 'lucide-react';
 import { TradeLog, LogType } from '../types';
 import { CHAINS_CONFIG } from '../data/mockTokens';
@@ -180,6 +181,13 @@ export const LiveTradeFeed: React.FC<LiveTradeFeedProps> = ({ logs, onClearLogs 
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-[#D9F99D]/15 text-[#D9F99D] border border-[#D9F99D]/30">
             <CheckCircle2 className="w-3 h-3 text-[#D9F99D]" />
             VAULT DEPOSIT
+          </span>
+        );
+      case 'DISCOVERY':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-blue-950/60 text-blue-300 border border-blue-500/40">
+            <Radio className="w-3 h-3 text-blue-400 animate-pulse" />
+            TOKEN DISCOVERED
           </span>
         );
       default:

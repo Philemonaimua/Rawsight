@@ -20,6 +20,7 @@ import { CHAINS_CONFIG } from '../data/mockTokens';
 import { inspectLiveContractAddress } from '../lib/dexScreener';
 import { formatAddressDisplay, getDexScreenerUrl, getExplorerTokenUrl } from '../lib/caParser';
 import { formatMarketCap, formatLiquidity, formatTokenPrice } from '../lib/formatters';
+import { PriceChangeBadge } from './PriceChangeBadge';
 
 interface RawsightRadarProps {
   tokens: MemeToken[];
@@ -292,9 +293,10 @@ export const RawsightRadar: React.FC<RawsightRadarProps> = ({
                       <span className="px-1.5 py-0.5 rounded-sm text-[9px] uppercase tracking-wider border border-[#D9F99D]/30 bg-[#D9F99D]/10 text-[#D9F99D]">
                         {chainConfig?.name || token.chain}
                       </span>
-                      <span className="text-xs text-zinc-400">
+                      <span className="text-xs text-zinc-300 font-bold">
                         {formatTokenPrice(token.currentPrice)}
                       </span>
+                      <PriceChangeBadge change24h={token.change24h} size="sm" />
                     </div>
                     <p className="text-xs text-zinc-400 mt-0.5 truncate">
                       {token.name} • <span className="text-zinc-300 font-semibold">MC: {formatMarketCap(token.mcap)}</span> • <span>LP: {formatLiquidity(token.liquidityUsd)}</span>

@@ -123,7 +123,7 @@ export const robinhoodPublicClient = createPublicClient({
 });
 
 /**
- * Singleton / cached Solana Connection instance with WebSocket support
+ * Singleton / cached Solana Connection instance with robust WebSocket handling
  */
 let cachedConnection: Connection | null = null;
 let cachedRpcUrl: string = '';
@@ -134,12 +134,19 @@ export function getSolanaConnection(customRpcUrl?: string): Connection {
     return cachedConnection;
   }
 
+  // Only attach wsEndpoint if an explicit wss:// URL is provided; avoid defaulting to failing public WSS
   const wsEndpoint = rpcUrl.startsWith('wss://') ? rpcUrl : undefined;
 
-  cachedConnection = new Connection(rpcUrl, {
-    commitment: 'confirmed',
-    wsEndpoint,
-  });
+  try {
+    cachedConnection = new Connection(rpcUrl, {
+      commitment: 'confirmed',
+      wsEndpoint,
+    });
+  } catch (err) {
+    // Fallback standard HTTP connection without websocket to prevent unhandled drops
+    cachedConnection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+  }
+
   cachedRpcUrl = rpcUrl;
   return cachedConnection;
 }
@@ -179,14 +186,14 @@ export async function fetchSolanaBalance(
       }
     }
   } catch (e) {
-    console.warn('Solana address parse error:', e);
+    console.warn('Solana address parse notice:', e);
   }
 
   return 0;
 }
 
 /**
- * Setup a real-time WebSocket connection listener (onAccountChange)
+ * Setup a resilient real-time account subscription with dual WebSocket & polling fallback
  */
 export function setupSolanaAccountSubscription(
   solAddress: string,
@@ -197,30 +204,60 @@ export function setupSolanaAccountSubscription(
     return () => {};
   }
 
+  let isSubscribed = true;
+  let subId: number | null = null;
+  let pollInterval: any = null;
+
+  // 1. Initial live balance fetch
+  fetchSolanaBalance(solAddress, customRpcUrl).then((bal) => {
+    if (isSubscribed && typeof bal === 'number') {
+      onBalanceUpdate(bal);
+    }
+  }).catch(() => {});
+
+  // 2. Continuous reliable HTTP polling every 3 seconds (fail-safe for all networks)
+  pollInterval = setInterval(async () => {
+    if (!isSubscribed) return;
+    try {
+      const bal = await fetchSolanaBalance(solAddress, customRpcUrl);
+      if (isSubscribed && typeof bal === 'number') {
+        onBalanceUpdate(bal);
+      }
+    } catch {}
+  }, 3000);
+
+  // 3. Optional WebSocket listener with silent error recovery
   try {
     const connection = getSolanaConnection(customRpcUrl);
     const pubKey = new PublicKey(solAddress.trim());
 
-    const subscriptionId = connection.onAccountChange(
+    subId = connection.onAccountChange(
       pubKey,
       (accountInfo) => {
-        if (accountInfo && typeof accountInfo.lamports === 'number') {
+        if (isSubscribed && accountInfo && typeof accountInfo.lamports === 'number') {
           const balanceInSol = accountInfo.lamports / LAMPORTS_PER_SOL;
           onBalanceUpdate(balanceInSol);
         }
       },
       'confirmed'
     );
-
-    return () => {
-      try {
-        connection.removeAccountChangeListener(subscriptionId);
-      } catch {}
-    };
   } catch (e) {
-    console.warn('WebSocket account change subscription notice:', e);
-    return () => {};
+    // Non-blocking catch
   }
+
+  return () => {
+    isSubscribed = false;
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = null;
+    }
+    if (subId !== null) {
+      try {
+        const connection = getSolanaConnection(customRpcUrl);
+        connection.removeAccountChangeListener(subId);
+      } catch {}
+    }
+  };
 }
 
 /**

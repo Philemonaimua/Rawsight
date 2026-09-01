@@ -25,6 +25,7 @@ import { CHAINS_CONFIG } from '../data/mockTokens';
 import { formatAddressDisplay, getDexScreenerUrl, getExplorerTokenUrl } from '../lib/caParser';
 import { formatMarketCap, formatLiquidity, formatTokenPrice } from '../lib/formatters';
 import { discoveryEngine } from '../services/discoveryEngine';
+import { PriceChangeBadge } from './PriceChangeBadge';
 
 interface EarlyLaunchFeedProps {
   tokens: EarlyLaunchToken[];
@@ -108,15 +109,15 @@ export const EarlyLaunchFeed: React.FC<EarlyLaunchFeedProps> = ({
   const filteredTokens = tokens.filter(t => {
     if (selectedChain !== 'all' && t.chain !== selectedChain) return false;
     
-    const stage = t.stage || (t.bondingCurveProgress && t.bondingCurveProgress < 100 ? 'pre-graduation' : 'graduated');
+    const isPreGrad = t.stage === 'pre-graduation' || (t.bondingCurveProgress !== undefined && t.bondingCurveProgress < 100);
+    const stage = isPreGrad ? 'pre-graduation' : 'graduated';
     if (selectedStage !== 'all' && stage !== selectedStage) return false;
 
-    // Apply pre-graduation filters if on pre-graduation mode
-    if (stage === 'pre-graduation') {
-      const progress = t.bondingProgress || t.bondingCurveProgress || 50;
+    // Apply pre-graduation filters when pre-graduation mode is selected
+    if (selectedStage === 'pre-graduation') {
+      const progress = t.bondingProgress ?? t.bondingCurveProgress ?? 50;
       if (progress < preGradSettings.minBondingProgress || progress > preGradSettings.maxBondingProgress) return false;
       if (t.mcap < preGradSettings.minMcapUsd || t.mcap > preGradSettings.maxMcapUsd) return false;
-      if ((t.txns5m?.buys ?? 15) < preGradSettings.minVelocityBuys) return false;
       if (preGradSettings.allowedLaunchpads.length > 0 && !preGradSettings.allowedLaunchpads.includes(t.launchSource)) return false;
     }
 
@@ -654,14 +655,16 @@ export const EarlyLaunchFeed: React.FC<EarlyLaunchFeedProps> = ({
                   <div className="grid grid-cols-2 gap-2 my-2.5 p-2 rounded-lg bg-[#0A0A0A] border border-white/5 text-xs">
                     <div>
                       <span className="text-[10px] text-zinc-500 block uppercase">Instant Price</span>
-                      <span className="font-bold text-white">
-                        {formatTokenPrice(token.currentPrice)}
-                      </span>
-                      <span className="text-[10px] text-emerald-400 ml-1 font-bold">+{token.change24h}%</span>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span className="font-bold text-white">
+                          {formatTokenPrice(token.currentPrice)}
+                        </span>
+                        <PriceChangeBadge change24h={token.change24h} size="sm" />
+                      </div>
                     </div>
                     <div className="text-right">
                       <span className="text-[10px] text-zinc-500 block uppercase">Live LP / MCap</span>
-                      <span className="font-bold text-white">{formatLiquidity(token.liquidityUsd)} LP</span>
+                      <span className="font-bold text-white block">{formatLiquidity(token.liquidityUsd)} LP</span>
                       <span className="text-[10px] text-zinc-300 font-semibold block">{formatMarketCap(token.mcap)} MCap</span>
                     </div>
                   </div>

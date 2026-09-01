@@ -14,15 +14,17 @@ import { MemeToken, EarlyLaunchToken, VaultConfig, GasPriority } from '../types'
 import { CHAINS_CONFIG } from '../data/mockTokens';
 import { formatAddressDisplay, getDexScreenerUrl, getExplorerTokenUrl } from '../lib/caParser';
 import { formatMarketCap, formatLiquidity, formatTokenPrice } from '../lib/formatters';
+import { PriceChangeBadge } from './PriceChangeBadge';
 
 interface SnipeModalProps {
   isOpen: boolean;
   token: MemeToken | EarlyLaunchToken | null;
   onClose: () => void;
-  onExecuteSnipe: (token: MemeToken, customAmountUsd: number) => void;
+  onExecuteSnipe: (token: MemeToken, customAmountUsd: number, isManualBuy?: boolean) => void;
   vaultConfig: VaultConfig;
   cashBalanceUsd: number;
   totalNavUsd: number;
+  activePositionsCount?: number;
 }
 
 export const SnipeModal: React.FC<SnipeModalProps> = ({
@@ -33,10 +35,12 @@ export const SnipeModal: React.FC<SnipeModalProps> = ({
   vaultConfig,
   cashBalanceUsd,
   totalNavUsd,
+  activePositionsCount = 0,
 }) => {
   if (!isOpen || !token) return null;
 
   const earlyToken = token as EarlyLaunchToken;
+  const isExceedingAutoSlots = activePositionsCount >= (vaultConfig.maxActivePositions || 6);
 
   // Calculate Strategy Default Sizing with $1.00 strict minimum floor
   const calculateStrategyRecommendedAmount = (): number => {
@@ -112,7 +116,7 @@ export const SnipeModal: React.FC<SnipeModalProps> = ({
 
   const handleConfirm = () => {
     if (!isAffordable) return;
-    onExecuteSnipe(token, selectedAmount);
+    onExecuteSnipe(token, selectedAmount, true);
     onClose();
   };
 
@@ -133,6 +137,11 @@ export const SnipeModal: React.FC<SnipeModalProps> = ({
                 <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                   PRODUCTION MAINNET
                 </span>
+                {isExceedingAutoSlots && (
+                  <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    MANUAL BUY (SLOT #{activePositionsCount + 1})
+                  </span>
+                )}
               </div>
               <p className="text-xs text-zinc-400">
                 Target: <strong className="text-white">{token.symbol}</strong> ({token.name}) • {chainConfig.name}
@@ -156,8 +165,8 @@ export const SnipeModal: React.FC<SnipeModalProps> = ({
                 {formatTokenPrice(token.currentPrice)}
               </span>
             </div>
-            <div className="flex items-center gap-1.5 text-xs">
-              <span className="text-emerald-400 font-bold">+{token.change24h}% 24h</span>
+            <div className="flex items-center gap-1.5 text-xs flex-wrap justify-end">
+              <PriceChangeBadge change24h={token.change24h} size="sm" />
               <span className="text-zinc-500">•</span>
               <span className="text-zinc-300 font-semibold">MC: {formatMarketCap(token.mcap)}</span>
               <span className="text-zinc-500">•</span>
